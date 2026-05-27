@@ -6,15 +6,15 @@ When Claude Code generates code across multiple tool calls in a single turn, the
 
 ## Solution
 
-A persistent localhost server that receives Claude Code hook events, groups file changes by agent turn, and renders them as diff cards in a browser tab. After reviewing a completed turn's diffs, the user can type a steer in the browser — the text is copied to clipboard for immediate paste into the Claude Code terminal.
+A persistent localhost server that receives Claude Code hook events, groups file changes by agent turn, and renders them as diff cards in both a browser tab and a Neovim scratch buffer. After reviewing a completed turn's diffs, the user can accept, decline per-file, or type a steer to redirect Claude — all without leaving the terminal.
 
 ## User Stories
 
 1. As a developer, I want to see all files changed in a Claude Code turn grouped together, so that I can review the full scope of changes before continuing.
 2. As a developer, I want diffs rendered with syntax highlighting and line-level change indicators, so that I can read changes quickly without opening each file.
-3. As a developer, I want new turns to appear in the browser automatically without refreshing, so that the review loop is frictionless.
-4. As a developer, I want to know when a Claude turn has finished (vs is still in progress), so that I know when to begin reviewing.
-5. As a developer, I want to type a steer prompt in the browser UI and have it copied to my clipboard, so that I can paste it into the Claude terminal immediately.
+3. As a developer, I want new turns to appear automatically without refreshing, so that the review loop is frictionless.
+4. As a developer, I want to know when a Claude turn has finished vs is still in progress, so that I know when to begin reviewing.
+5. As a developer, I want to type a steer prompt and have it copied to my clipboard, so that I can paste it into the Claude terminal immediately.
 6. As a developer, I want the diff viewer to work across all my projects without per-project configuration, so that I don't have to set it up per repo.
 7. As a developer, I want the diff viewer to run as a background daemon, so that it is always ready when I start a Claude session.
 8. As a developer, I want the daemon to fail silently when not running, so that Claude Code sessions work normally without it.
@@ -22,11 +22,16 @@ A persistent localhost server that receives Claude Code hook events, groups file
 10. As a developer, I want Write, Edit, and MultiEdit tool calls all captured, so that no file change goes unreviewed.
 11. As a developer, I want each turn's diff group to show which files were changed and how many lines were added/removed, so that I can triage large turns at a glance.
 12. As a developer, I want diff cards to be collapsible, so that I can focus on the files I care about.
-13. As a developer, I want the steer input to be pre-focused when a turn completes, so that I can type immediately without clicking.
-14. As a developer, I want to see new file creations (Write) distinguished from modifications (Edit/MultiEdit) visually, so that I understand the nature of each change.
-15. As a developer, I want the browser tab title to update with the turn count, so that I know there are new diffs without switching focus.
-16. As a developer (v2), I want my steer to be injected directly into the Claude terminal via tmux, so that I don't need to manually paste.
-17. As a developer (v2), I want to see Bash commands run by Claude alongside file diffs in the same turn group, so that I have full context of what the agent did.
+13. As a developer, I want new file creations distinguished from modifications visually, so that I understand the nature of each change.
+14. As a developer, I want the browser tab title to update with the turn count, so that I know there are new diffs without switching focus.
+15. As a developer running two Claude sessions simultaneously, I want diffs from each session kept separate, so that I don't see garbled mixed output.
+16. As a Neovim user, I want a statusline badge showing pending turns, so that I know to review without being interrupted mid-edit.
+17. As a Neovim user, I want `<leader>dv` to open the latest pending turn as a scratch buffer, so that I can review diffs without leaving the terminal.
+18. As a Neovim user, I want `d` to decline a file and revert it to the last commit, so that I can undo a specific change inline.
+19. As a Neovim user, I want `c` to open a steer prompt, so that I can redirect Claude without switching to a browser.
+20. As a Neovim user, I want `q` to accept the whole turn and close the buffer, so that review dismissal is a single keystroke.
+21. As a developer (v2), I want my steer injected directly into the Claude terminal via tmux, so that I don't need to manually paste.
+22. As a developer (v2), I want Bash commands shown alongside file diffs in the same turn group, so that I have full context of what the agent did.
 
 ## Implementation Decisions
 
@@ -34,69 +39,96 @@ A persistent localhost server that receives Claude Code hook events, groups file
 
 **Turn Buffer** — pure in-memory accumulator, no I/O
 - `add(event: NormalizedEvent): void`, `flush(): TurnSnapshot`, `reset(): void`
+- One TurnBuffer per session, stored in `Map<sessionId, TurnBuffer>`
 - Resets after each flush; no cross-turn state
 
 **Event Receiver** — POST /event + POST /turn-end
-- Normalizes Write/Edit/MultiEdit into unified `NormalizedEvent`
-- MultiEdit expands to N individual Edit events
-- `/turn-end` triggers flush → broadcaster.emit
+- Reads `sessionId` from request body (sourced from `$CLAUDE_SESSION_ID` in hook)
+- Normalizes Write/Edit/MultiEdit into `NormalizedEvent` with pre-computed `unifiedDiff`
+- Write old content: `git show HEAD:<path>` (empty string = new file)
+- Edit old content: `oldString` from tool JSON directly
+- MultiEdit: expands to N NormalizedEvents, one per edit
+- `/turn-end`: flush session buffer → skip if empty → broadcaster.emit(snapshot)
+
+**Event Normalizer** — pure function, no I/O
+- Input: raw tool JSON + old content string
+- Output: `NormalizedEvent` with `unifiedDiff` via `diff.createPatch()`
+- Testable in isolation with no server context
 
 **SSE Broadcaster** — manages EventSource connections
-- `subscribe(res)`, `unsubscribe(res)`, `emit(snapshot)`
+- `subscribe(res)`, `unsubscribe(res)`, `emit(snapshot: TurnSnapshot)`
 - Cleans up disconnected clients on emit
 
 **Steer Handler** — POST /steer
-- v1: `pbcopy` (macOS clipboard)
-- v2: write to `~/.claude/pending-steer.md` + `tmux send-keys`
+- v1: `{ sessionId, text }` → `echo text | pbcopy`
+- v2: additionally writes to `~/.claude/pending-steer.md` + `tmux send-keys`
 
 **Static Server** — serves browser/ from Hono; no build step
 
 **Browser UI** — vanilla JS + diff2html (CDN)
-- SSE client → per-turn grouped diff cards
-- Collapsible per-file diffs, Write vs Edit visually distinguished
-- Steer input box pre-focused on turn completion; Send → POST /steer
+- EventSource client → per-session turn cards
+- Collapsible per-file diffs; Write vs Edit visually distinguished
+- Steer input box; Send → POST /steer
 - Tab title: `(N) Diff Viewer`
 
+**Neovim Lua Plugin** — `nvim/lua/diffviewer.lua`
+- `vim.system({'curl','-sN','http://localhost:3333/stream'}, {text=true, on_stdout=…})`
+- Parses `data: <json>` lines, decodes TurnSnapshot
+- Maintains pending turn queue per session
+- Statusline component: `[DV: N]` when pending turns > 0
+- `<leader>dv`: opens scratch buffer (`filetype=diff`) with latest turn's unified diffs
+- File header parsing: `diff --git a/<path>` → maps cursor position to file path
+- Keymaps (buffer-local): `q`=accept+close, `d`=decline file, `c`=steer via `vim.ui.input`
+- `vim.ui.input` cancel → opens multi-line scratch buffer input (v2 escalation path)
+- Auto-reconnect: `vim.defer_fn` retry on `vim.system` process exit
+
 **Hook Scripts**
-- `hooks/post-tool-use.sh`: curl POST /event on Write|Edit|MultiEdit; exit 0 always
-- `hooks/stop.sh`: curl POST /turn-end; exit 0 always
-- Both: `curl -sf --max-time 1` (fail fast, fail silent)
+- `hooks/post-tool-use.sh`: reads `$CLAUDE_TOOL_NAME`, `$CLAUDE_TOOL_INPUT_JSON`, `$CLAUDE_SESSION_ID`; runs `git show HEAD:<path>` for Write; POSTs to `/event`; exits 0 always
+- `hooks/stop.sh`: POSTs `{ sessionId }` to `/turn-end`; exits 0 always
+- Both: `curl -sf --max-time 1` (fail fast, fail silent when server down)
 
-**Install Script** — idempotently patches `~/.claude/settings.json`; merges hooks, never overwrites
+**Install Script** — `scripts/install.sh`
+- Idempotently patches `~/.claude/settings.json`: adds PostToolUse (matcher `Write|Edit|MultiEdit`) and Stop hook entries
+- Merges into existing hook arrays; never overwrites
+- Creates `~/.claude/settings.json` with empty scaffold if missing
 
-### Architecture
+### Architecture decisions
 
 - Port: `3333` (hardcoded, no config in v1)
+- Runtime: Node 20+, ESM (`"type": "module"`), Vitest for tests
 - Stateless across restarts; no turn history persistence in v1
 - Hook paths: absolute `~/.claude/tools/diff-viewer/hooks/`
-- Daemon: `tmux new-window -n diff-viewer 'node ~/.claude/tools/diff-viewer/server.js'`
-- `node_modules/` gitignored; `npm install` in machine bootstrap
-- Placement: `~/dotfiles/.claude/tools/diff-viewer/` stowed to `~/.claude/tools/diff-viewer/`
+- Concurrent sessions: `Map<sessionId, TurnBuffer>`, GC'd on Stop
+- Empty turns (Stop with no buffered events): skip emit silently
 
 ## Testing Decisions
 
-Tests verify external behavior through the public interface only — not internal state, not implementation details.
+Tests verify external behavior through the public interface — not internal state, not implementation details.
 
 | Module | What to test |
 |---|---|
-| Turn Buffer | add+flush sequence; empty flush; reset after flush; MultiEdit expansion count |
-| Event Receiver | Write/Edit/MultiEdit → correct NormalizedEvent; unknown tool dropped; /turn-end triggers flush+emit |
+| Turn Buffer | add+flush returns ordered events; empty flush returns empty snapshot; reset starts fresh; seq numbers increment |
+| Event Normalizer | Write payload → correct NormalizedEvent + unifiedDiff; Edit → correct shape; MultiEdit → N events; new file (empty old) → all-green diff |
+| Event Receiver | Unknown tool dropped; /turn-end triggers flush+emit (stub broadcaster); empty flush skipped; session isolation (two sessions don't mix) |
 | SSE Broadcaster | subscribe adds connection; emit writes SSE; disconnected client cleaned up; multiple subscribers all receive |
-| Steer Handler | valid text → pbcopy invoked; empty text → 400 |
-| Browser UI | turn-complete SSE renders card; Send POSTs + clears input; tab title updates; collapse/expand toggle |
+| Steer Handler | Valid text → pbcopy invoked with correct input; empty text → 400 |
+| Browser UI | turn-complete SSE renders new card; Send POSTs + clears input; tab title updates; collapse/expand toggle |
+| Lua Plugin | (manual) badge appears on turn arrival; `<leader>dv` opens buffer; `d` reverts file; `c` opens input |
 
 ## Out of Scope
 
 - Git history traversal (use lazygit / Fugitive)
 - Mid-turn agent interruption
 - Diff history persistence across restarts (v3 candidate)
-- Bash command capture (v2)
+- Bash command capture in turn groups (v2)
 - tmux injection (v2)
-- Windows/Linux support (v1 is macOS only)
+- Multi-line steer scratch buffer (v2 escalation from `vim.ui.input`)
+- Windows/Linux support (macOS `pbcopy` assumed for v1)
 - Auth or network exposure (localhost only)
 
 ## Further Notes
 
-- Existing `PostToolUse` hook uses `Write|Edit|MultiEdit` matcher for lint protection — diff viewer adds a second entry under same matcher, evaluated independently
-- `diff2html` from CDN keeps bundle dependency-free for a local tool
-- Steer input only touches clipboard — Claude's context window and conversation state untouched
+- Existing `PostToolUse` hook uses `Write|Edit|MultiEdit` matcher for lint protection — diff viewer adds a second entry under same matcher, evaluated independently by Claude Code
+- `diff2html` from CDN keeps the browser bundle dependency-free
+- Steer only touches clipboard — Claude's context window and conversation state untouched
+- Placement: `~/dotfiles/.claude/tools/diff-viewer/` stowed to `~/.claude/tools/diff-viewer/`; Lua plugin at `~/dotfiles/nvim/lua/diffviewer.lua`
