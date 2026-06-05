@@ -12,14 +12,21 @@ export function createApp(deps = {}) {
   const app = new Hono();
 
   app.post('/event', async (c) => {
-    const { sessionId, tool, path, oldContent, newContent } = await c.req.json();
+    let body;
+    try { body = await c.req.json(); } catch { return c.json({ error: 'invalid body' }, 400); }
+    const { sessionId, tool, path, oldContent, newContent } = body;
+    if (typeof sessionId !== 'string' || !sessionId) return c.json({ error: 'sessionId required' }, 400);
+    if (typeof path !== 'string' || !path) return c.json({ error: 'path required' }, 400);
     if (!KNOWN_TOOLS.has(String(tool).toLowerCase())) return c.body(null, 200);
     registry.add(sessionId, normalizeEvent({ tool, path, oldContent, newContent }));
     return c.body(null, 200);
   });
 
   app.post('/turn-end', async (c) => {
-    const { sessionId } = await c.req.json();
+    let body;
+    try { body = await c.req.json(); } catch { return c.json({ error: 'invalid body' }, 400); }
+    const { sessionId } = body;
+    if (typeof sessionId !== 'string' || !sessionId) return c.json({ error: 'sessionId required' }, 400);
     const snapshot = registry.flush(sessionId);
     if (snapshot) broadcaster.emit(snapshot);
     return c.body(null, 200);

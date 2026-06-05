@@ -49,5 +49,8 @@ describe('POST /event + /turn-end', () => {
     await post('/event', { sessionId: 's2', tool: 'Edit', path: 'b', oldContent: 'x', newContent: 'y' });
     await post('/turn-end', { sessionId: 's2' });
     expect(emitted[0].events.map(e => e.path)).toEqual(['b']);
+    // s1's buffer must still be intact
+    await post('/turn-end', { sessionId: 's1' });
+    expect(emitted[1].events.map(e => e.path)).toEqual(['a']);
   });
 });
