@@ -17,6 +17,7 @@ CLAUDE_TOOL_NAME=Bash CLAUDE_TOOL_INPUT_JSON='{}' CLAUDE_SESSION_ID=t1 ./hooks/p
 
 # AC-H1: capture POST body against a one-shot listener
 TMP="$(mktemp)"
+trap 'kill "$NCPID" 2>/dev/null; rm -f "$TMP" /tmp/dv_hooktest.js' EXIT
 { printf 'HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n'; } | nc -l 3333 >"$TMP" 2>/dev/null &
 NCPID=$!
 sleep 0.3
@@ -27,5 +28,7 @@ sleep 0.5
 wait $NCPID 2>/dev/null
 grep -q '"path":"/tmp/dv_hooktest.js"' "$TMP" || fail "H1 POST body missing path"
 grep -q '"tool":"Write"' "$TMP" || fail "H1 POST body missing tool"
-rm -f "$TMP" /tmp/dv_hooktest.js
+grep -q '"sessionId":"t1"' "$TMP" || fail "H1 POST body missing sessionId"
+grep -q '"newContent":"console.log(1)"' "$TMP" || fail "H1 POST body missing newContent"
+grep -q '"oldContent":""' "$TMP" || fail "H1 POST body missing oldContent"
 echo "PASS: hooks"
