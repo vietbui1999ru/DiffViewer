@@ -20,11 +20,12 @@ export class TurnBuffer {
     }
   }
 
+  // Non-destructive: caller (SessionRegistry) deletes this buffer after flush.
   flush(sessionId, turnNumber) {
     return {
       sessionId,
       turnNumber,
-      events: this.events,
+      events: this.events.slice(),
       startedAt: this.startedAt,
       completedAt: this.now(),
     };

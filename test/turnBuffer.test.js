@@ -23,9 +23,9 @@ describe('TurnBuffer', () => {
   it('AC-TB4 dedupe by path keeps latest at original position', () => {
     const b = new TurnBuffer(() => 1);
     b.add(ev('a', 'a1')); b.add(ev('b', 'b1')); b.add(ev('a', 'a2'));
-    const paths = b.flush().events.map(e => e.path);
-    expect(paths).toEqual(['a', 'b']);
-    expect(b.events.find(e => e.path === 'a').unifiedDiff).toBe('a2');
+    const snap = b.flush();
+    expect(snap.events.map(e => e.path)).toEqual(['a', 'b']);
+    expect(snap.events.find(e => e.path === 'a').unifiedDiff).toBe('a2');
   });
 
   it('AC-TB7 startedAt is first add, completedAt is flush time', () => {
