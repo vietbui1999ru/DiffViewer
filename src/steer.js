@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 export function pbcopy(text) {
   return new Promise((resolve, reject) => {
     const p = execFile('pbcopy', (err) => (err ? reject(err) : resolve()));
+    p.stdin.on('error', reject);
     p.stdin.write(text);
     p.stdin.end();
   });
@@ -14,11 +15,13 @@ export function makeSteerHandler(exec = pbcopy) {
   return async (c) => {
     let body;
     try { body = await c.req.json(); } catch { return c.json({ error: 'invalid body' }, 400); }
-    const { text } = body;
-    if (typeof text !== 'string' || text.trim() === '') {
-      return c.body('empty steer', 400);
+    const text = typeof body.text === 'string' ? body.text.trim() : null;
+    if (!text) return c.json({ error: 'text required' }, 400);
+    try {
+      await exec(text);
+    } catch {
+      return c.json({ error: 'exec failed' }, 500);
     }
-    await exec(text);
     return c.body(null, 200);
   };
 }

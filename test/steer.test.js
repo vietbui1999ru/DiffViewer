@@ -39,4 +39,15 @@ describe('POST /steer', () => {
     expect(r.status).toBe(400);
     expect(exec).not.toHaveBeenCalled();
   });
+
+  it('AC-ST5 exec throws -> 500', async () => {
+    const exec = vi.fn(async () => { throw new Error('pbcopy failed'); });
+    const app = createApp({ steerExec: exec });
+    const r = await app.request('/steer', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: 's1', text: 'hello' }),
+    });
+    expect(r.status).toBe(500);
+  });
 });
