@@ -8,6 +8,16 @@ Claude Code's `PostToolUse` hook fires after every Write/Edit/MultiEdit and POST
 
 See [`docs/PRD.md`](docs/PRD.md) for full requirements and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for component map.
 
+## Pi worker extension
+
+This repo also contains `pi-extension/`, a Pi package for the OpenCode/Claude commander → Pi worker workflow. It intercepts Pi worker `write`/`edit` tool changes and opens an interactive line-level Accept/Edit/Deny review UI before the worker continues. Decisions are written to `.pi/diff-review/decisions.jsonl` and `.pi/diff-review/latest.md` so the commander can inspect what the worker actually changed.
+
+```bash
+pi install /Users/vietquocbui/repos/DiffViewer/pi-extension
+# or one-off:
+pi -e /Users/vietquocbui/repos/DiffViewer/pi-extension
+```
+
 ## Setup
 
 ```bash

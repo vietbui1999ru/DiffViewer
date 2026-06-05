@@ -1,0 +1,25 @@
+{
+  "name": "pi-diff-review",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "description": "Pi extension for interactive Accept/Edit/Deny review of agent file changes.",
+  "pi": {
+    "extensions": [
+      "./extensions/pi-diff-review/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "dependencies": {
+    "diff": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/diff": "^7.0.2"
+  }
+}
