@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import { SessionRegistry } from './turnBuffer.js';
 import { Broadcaster } from './broadcaster.js';
 import { normalizeEvent } from './normalizer.js';
@@ -34,6 +35,20 @@ export function createApp(deps = {}) {
     if (snapshot) broadcaster.emit(snapshot);
     return c.body(null, 200);
   });
+
+  app.get('/stream', (c) =>
+    streamSSE(c, async (stream) => {
+      const client = {
+        send: (snapshot) =>
+          stream.writeSSE({ event: 'turn-complete', data: JSON.stringify(snapshot) }),
+      };
+      broadcaster.subscribe(client);
+      stream.onAbort(() => broadcaster.unsubscribe(client));
+      while (!stream.aborted) {
+        await stream.sleep(30000);
+      }
+    })
+  );
 
   app.get('/', (c) => c.text('DiffViewer v0.5'));
 
