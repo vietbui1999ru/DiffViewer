@@ -5,15 +5,20 @@ SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
 PTU='~/.claude/tools/diff-viewer/hooks/post-tool-use.sh'
 STOP='~/.claude/tools/diff-viewer/hooks/stop.sh'
 
+command -v node >/dev/null 2>&1 || { echo "error: node is required"; exit 1; }
+
 mkdir -p "$(dirname "$SETTINGS")"
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
 
 SETTINGS="$SETTINGS" PTU="$PTU" STOP="$STOP" node -e '
   const fs = require("fs");
   const file = process.env.SETTINGS, ptu = process.env.PTU, stop = process.env.STOP;
-  const cfg = JSON.parse(fs.readFileSync(file, "utf8") || "{}");
-  cfg.PostToolUse ||= [];
-  cfg.Stop ||= [];
+  let cfg;
+  try { cfg = JSON.parse(fs.readFileSync(file, "utf8") || "{}"); }
+  catch (e) { process.stderr.write("error: " + file + " is not valid JSON. Back it up and re-run.\n"); process.exit(1); }
+  if (typeof cfg !== "object" || Array.isArray(cfg) || cfg === null) cfg = {};
+  if (!Array.isArray(cfg.PostToolUse)) cfg.PostToolUse = [];
+  if (!Array.isArray(cfg.Stop)) cfg.Stop = [];
 
   const has = (arr, cmd) =>
     arr.some(entry => (entry.hooks || []).some(h => h.command === cmd));
@@ -25,6 +30,8 @@ SETTINGS="$SETTINGS" PTU="$PTU" STOP="$STOP" node -e '
   if (!has(cfg.Stop, stop)) {
     cfg.Stop.push({ hooks: [{ type: "command", command: stop }] });
   }
-  fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
+  const tmp = file + ".tmp." + process.pid;
+  fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2) + "\n");
+  fs.renameSync(tmp, file);
 '
 echo "DiffViewer hooks installed in $SETTINGS"
