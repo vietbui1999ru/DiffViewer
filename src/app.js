@@ -39,8 +39,10 @@ export function createApp(deps = {}) {
   app.get('/stream', (c) =>
     streamSSE(c, async (stream) => {
       const client = {
-        send: (snapshot) =>
-          stream.writeSSE({ event: 'turn-complete', data: JSON.stringify(snapshot) }),
+        send: (snapshot) => {
+          stream.writeSSE({ event: 'turn-complete', data: JSON.stringify(snapshot) })
+            .catch(() => broadcaster.unsubscribe(client));
+        },
       };
       broadcaster.subscribe(client);
       stream.onAbort(() => broadcaster.unsubscribe(client));

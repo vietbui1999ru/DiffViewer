@@ -30,7 +30,8 @@ describe('GET /stream', () => {
     });
 
     let buf = '';
-    while (!buf.includes('turn-complete')) {
+    const deadline = Date.now() + 8000;
+    while (!buf.includes('turn-complete') && Date.now() < deadline) {
       const { value, done } = await reader.read();
       if (done) break;
       buf += dec.decode(value);

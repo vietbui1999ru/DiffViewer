@@ -7,6 +7,6 @@ const app = createApp();
 // serve browser/ assets; GET / -> browser/index.html
 app.use('/*', serveStatic({ root: './browser' }));
 
-serve({ fetch: app.fetch, port: 3333 }, (info) =>
+serve({ fetch: app.fetch, port: 3333, hostname: '127.0.0.1' }, (info) =>
   console.log(`DiffViewer on http://localhost:${info.port}`)
 );
