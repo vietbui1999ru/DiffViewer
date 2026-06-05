@@ -1,0 +1,14 @@
+:root { font-family: ui-monospace, monospace; }
+body { margin: 0; background: #0d1117; color: #c9d1d9; }
+header { display: flex; gap: 1rem; align-items: baseline; padding: 0.75rem 1rem; border-bottom: 1px solid #30363d; }
+#status { color: #f85149; font-size: 0.85rem; }
+.turn-card { border: 1px solid #30363d; border-radius: 8px; margin: 1rem; padding: 0.5rem 1rem; }
+.turn-title { font-weight: 600; margin-bottom: 0.5rem; }
+.file-header { display: block; width: 100%; text-align: left; background: none; border: 0; color: inherit; cursor: pointer; padding: 0.35rem 0; font: inherit; }
+.badge { font-size: 0.7rem; padding: 0 0.35rem; border-radius: 4px; margin-right: 0.5rem; }
+.badge-write { background: #1f6feb; color: #fff; }
+.badge-edit { background: #6e40c9; color: #fff; }
+.new-file { font-size: 0.7rem; color: #3fb950; margin-left: 0.5rem; }
+.steer { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+.steer-input { flex: 1; min-height: 2.5rem; background: #161b22; color: inherit; border: 1px solid #30363d; border-radius: 6px; }
+.steer-send { background: #238636; color: #fff; border: 0; border-radius: 6px; padding: 0 1rem; cursor: pointer; }
