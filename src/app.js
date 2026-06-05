@@ -18,7 +18,8 @@ export function createApp(deps = {}) {
     try { body = await c.req.json(); } catch { return c.json({ error: 'invalid body' }, 400); }
     const { sessionId, tool, path, oldContent, newContent } = body;
     if (typeof sessionId !== 'string' || !sessionId) return c.json({ error: 'sessionId required' }, 400);
-    if (typeof path !== 'string' || !path) return c.json({ error: 'path required' }, 400);
+    if (typeof path !== 'string' || !path || path.length > 4096 || /[\x00-\x1f]/.test(path))
+      return c.json({ error: 'path invalid' }, 400);
     if (!KNOWN_TOOLS.has(String(tool).toLowerCase())) return c.body(null, 200);
     registry.add(sessionId, normalizeEvent({ tool, path, oldContent, newContent }));
     return c.body(null, 200);
