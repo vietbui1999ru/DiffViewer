@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { SessionRegistry } from './turnBuffer.js';
 import { Broadcaster } from './broadcaster.js';
 import { normalizeEvent } from './normalizer.js';
+import { makeSteerHandler } from './steer.js';
 
 const KNOWN_TOOLS = new Set(['write', 'edit', 'multiedit']);
 
@@ -21,6 +22,8 @@ export function createApp(deps = {}) {
     registry.add(sessionId, normalizeEvent({ tool, path, oldContent, newContent }));
     return c.body(null, 200);
   });
+
+  app.post('/steer', makeSteerHandler(deps.steerExec));
 
   app.post('/turn-end', async (c) => {
     let body;
