@@ -54,12 +54,23 @@ export function renderTurnCard(snapshot, doc = document) {
   const sendBtn = el(doc, 'button', { textContent: 'Send', className: 'steer-send' });
   sendBtn.dataset.testid = 'steer-send';
   sendBtn.addEventListener('click', async () => {
-    const text = steerBox.value;
-    const res = await fetch('/steer', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sessionId: snapshot.sessionId, text }),
-    });
-    if (res.ok) steerBox.value = '';
+    const text = steerBox.value.trim();
+    if (!text) return;
+    try {
+      const res = await fetch('/steer', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: snapshot.sessionId, text }),
+      });
+      if (res.ok) {
+        steerBox.value = '';
+      } else {
+        sendBtn.textContent = 'Error';
+        setTimeout(() => { sendBtn.textContent = 'Send'; }, 2000);
+      }
+    } catch {
+      sendBtn.textContent = 'Disconnected';
+      setTimeout(() => { sendBtn.textContent = 'Send'; }, 2000);
+    }
   });
   const steer = el(doc, 'div', { className: 'steer' }, [steerBox, sendBtn]);
 
@@ -78,7 +89,8 @@ export function init() {
 
   const es = new EventSource('/stream');
   es.addEventListener('turn-complete', (e) => {
-    const snapshot = JSON.parse(e.data);
+    let snapshot;
+    try { snapshot = JSON.parse(e.data); } catch { return; }
     root.prepend(renderTurnCard(snapshot));
     updateTabTitle(++count);
   });
