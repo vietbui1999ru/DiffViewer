@@ -20,12 +20,17 @@ pi -e /Users/vietquocbui/repos/DiffViewer/pi-extension
 
 ## Setup
 
+Requires Node 20+, `jq`, and `curl`.
+
 ```bash
 npm install
 node server.js          # or: tmux new-window -n diff-viewer 'node server.js'
-node scripts/install.sh # patches ~/.claude/settings.json with hooks
+bash scripts/install.sh # patches ~/.claude/settings.json with hooks (idempotent)
 open http://localhost:3333
 ```
+
+v0.5 scope: per-turn grouped diff cards in the browser + clipboard steer.
+Neovim plugin and the architecture panel are planned for v1 (see `docs/PRD.md`).
 
 ## Placement
 
