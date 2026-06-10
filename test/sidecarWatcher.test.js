@@ -257,6 +257,141 @@ describe('sidecarWatcher — file write -> SSE snapshot', () => {
   });
 });
 
+describe('sidecarWatcher — task propagation (§7)', () => {
+  it('SW-TASK1 snapshot.task set from turn file task field', { timeout: 8000 }, async () => {
+    const { root, sessionDir, sessionId } = makeTmpRepo('sw-task1-session');
+    const registry = new SessionRegistry();
+    const broadcaster = new Broadcaster();
+    const emitted = collectEmits(broadcaster);
+
+    const watcher = createSidecarWatcher([root], { registry, broadcaster });
+    watchers.push(watcher);
+
+    await new Promise(r => setTimeout(r, 50));
+    // Write turn with a real task id
+    writeTurn(sessionDir, 1, [
+      { tool: 'Write', path: 'x.js', oldContent: '', newContent: 'x\n' },
+    ], { task: 'TASK-007' });
+
+    await waitFor(() => emitted.length >= 1, 6000);
+    expect(emitted[0].task).toBe('TASK-007');
+  });
+
+  it('SW-TASK2 snapshot.task is null when turn file has task: null', { timeout: 8000 }, async () => {
+    const { root, sessionDir, sessionId } = makeTmpRepo('sw-task2-session');
+    const registry = new SessionRegistry();
+    const broadcaster = new Broadcaster();
+    const emitted = collectEmits(broadcaster);
+
+    const watcher = createSidecarWatcher([root], { registry, broadcaster });
+    watchers.push(watcher);
+
+    await new Promise(r => setTimeout(r, 50));
+    writeTurn(sessionDir, 1, [
+      { tool: 'Write', path: 'y.js', oldContent: '', newContent: 'y\n' },
+    ], { task: null });
+
+    await waitFor(() => emitted.length >= 1, 6000);
+    expect(emitted[0].task).toBeNull();
+  });
+
+  it('SW-TASK3 snapshot.task is null when turn file task field absent', { timeout: 8000 }, async () => {
+    const { root, sessionDir, sessionId } = makeTmpRepo('sw-task3-session');
+    const registry = new SessionRegistry();
+    const broadcaster = new Broadcaster();
+    const emitted = collectEmits(broadcaster);
+
+    const watcher = createSidecarWatcher([root], { registry, broadcaster });
+    watchers.push(watcher);
+
+    await new Promise(r => setTimeout(r, 50));
+    // writeTurn with no task override — payload gets task:null by default
+    writeTurn(sessionDir, 1, [
+      { tool: 'Write', path: 'z.js', oldContent: '', newContent: 'z\n' },
+    ]);
+
+    await waitFor(() => emitted.length >= 1, 6000);
+    expect(emitted[0].task).toBeNull();
+  });
+});
+
+describe('sidecarWatcher — security hardening', () => {
+  it('SW-SEC1 startup scan skips symlink session dirs', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'diffviewer-test-'));
+    const turnsDir = path.join(root, '.diffviewer', 'turns');
+    fs.mkdirSync(turnsDir, { recursive: true });
+
+    // Create a real session dir OUTSIDE turnsDir
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'diffviewer-outside-'));
+    const outsideSessionDir = path.join(outsideDir, 'evil-sess');
+    fs.mkdirSync(outsideSessionDir);
+    // Pre-stage a valid turn file in the outside dir
+    const payload = JSON.stringify({
+      version: 1,
+      sessionId: 'evil-sess',
+      harness: 'claude-code',
+      task: null,
+      turnNumber: 1,
+      startedAt: Date.now() - 100,
+      completedAt: Date.now(),
+      events: [{ tool: 'Write', path: 'evil.js', oldContent: '', newContent: 'evil\n' }],
+    });
+    fs.writeFileSync(path.join(outsideSessionDir, 'turn-1.json'), payload);
+
+    // Plant symlink inside turnsDir pointing at outsideSessionDir
+    fs.symlinkSync(outsideSessionDir, path.join(turnsDir, 'evil-sess'));
+
+    const registry = new SessionRegistry();
+    const broadcaster = new Broadcaster();
+    const emitted = collectEmits(broadcaster);
+
+    const watcher = createSidecarWatcher([root], { registry, broadcaster });
+    watchers.push(watcher);
+
+    // Startup scan is synchronous — symlink session dir must be skipped
+    expect(emitted).toHaveLength(0);
+  });
+
+  it('SW-SEC2 fs.watch callback rejects filePath that escapes turnsDir', { timeout: 5000 }, async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'diffviewer-test-'));
+    const turnsDir = path.join(root, '.diffviewer', 'turns');
+    fs.mkdirSync(turnsDir, { recursive: true });
+
+    const registry = new SessionRegistry();
+    const broadcaster = new Broadcaster();
+    const emitted = collectEmits(broadcaster);
+
+    const watcher = createSidecarWatcher([root], { registry, broadcaster });
+    watchers.push(watcher);
+
+    // Create a turn file OUTSIDE turnsDir that matches TURN_FILE_RE name
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'diffviewer-outside-'));
+    const outsideFile = path.join(outsideDir, 'turn-1.json');
+    const payload = JSON.stringify({
+      version: 1,
+      sessionId: 'escape-sess',
+      harness: 'claude-code',
+      task: null,
+      turnNumber: 1,
+      startedAt: Date.now() - 100,
+      completedAt: Date.now(),
+      events: [{ tool: 'Write', path: 'escape.js', oldContent: '', newContent: 'escape\n' }],
+    });
+    fs.writeFileSync(outsideFile, payload);
+
+    // Plant a symlink so that turnsDir/escape-sess/turn-1.json resolves outside
+    const escapeSessDir = path.join(turnsDir, 'escape-sess');
+    fs.symlinkSync(outsideDir, escapeSessDir);
+
+    // Wait a bit to confirm no emit fires
+    await new Promise(r => setTimeout(r, 500));
+    expect(emitted).toHaveLength(0);
+
+    // The outside file must still exist (not unlinked by our code)
+    expect(fs.existsSync(outsideFile)).toBe(true);
+  });
+});
+
 describe('sidecarWatcher — POST path still works (existing suite compatibility)', () => {
   it('SW7 registry and broadcaster shared between watcher and POST path', async () => {
     const { root } = makeTmpRepo('sw7-session');

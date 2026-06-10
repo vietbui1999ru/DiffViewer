@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#16213e">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="DiffViewer">
+  <title>DiffViewer Mobile</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Connection banner (sticky top) -->
+  <div id="banner" class="disconnected" aria-live="polite">
+    <span class="dot"></span>
+    <span class="label">Disconnected</span>
+    <span id="token-badge" class="token-badge">no token</span>
+  </div>
+
+  <!-- Token-rejected error -->
+  <div id="token-error" aria-live="assertive">
+    Token rejected — re-pair by scanning the QR or pasting a new token below.
+  </div>
+
+  <!-- Pairing screen -->
+  <div id="pair-screen">
+    <h1>DiffViewer Mobile</h1>
+    <p>Scan the QR code from your desktop terminal, or paste the token manually.</p>
+    <form class="pair-form" id="pair-form" autocomplete="off">
+      <input
+        id="token-input"
+        type="text"
+        placeholder="Paste token here…"
+        autocomplete="off"
+        spellcheck="false"
+        autocorrect="off"
+        autocapitalize="off"
+      >
+      <button type="submit" class="btn-primary">Connect</button>
+    </form>
+  </div>
+
+  <!-- Review screen (card stack) -->
+  <div id="review-screen" style="display:none">
+    <div id="empty-state">Waiting for agent turns…</div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

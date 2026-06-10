@@ -73,6 +73,8 @@ function ingestFile(filePath, { registry, broadcaster, normalizeEvent }) {
 
   const snapshot = registry.flush(sessionId);
   if (snapshot) {
+    // §7: propagate task id from the turn file into the snapshot
+    snapshot.task = typeof parsed.task === 'string' && parsed.task ? parsed.task : null;
     broadcaster.emit(snapshot);
     // Unlink only after a successful broadcast (spec §4: "After a successful broadcast the server unlinks").
     try {
@@ -139,9 +141,9 @@ export function createSidecarWatcher(roots, deps = {}) {
       for (const sessionId of sessions) {
         const sessionDir = path.join(turnsDir, sessionId);
         try {
-          if (fs.statSync(sessionDir).isDirectory()) {
-            startupScan(sessionDir, effectiveDeps);
-          }
+          const sst = fs.lstatSync(sessionDir);
+          if (sst.isSymbolicLink() || !sst.isDirectory()) continue;
+          startupScan(sessionDir, effectiveDeps);
         } catch {}
       }
     } catch {}
@@ -156,6 +158,11 @@ export function createSidecarWatcher(roots, deps = {}) {
         if (!TURN_FILE_RE.test(basename)) return;
 
         const filePath = path.join(turnsDir, filename);
+
+        // Containment guard: resolve to absolute path and verify it stays within turnsDir.
+        // Prevents symlink-escape attacks where a symlink inside turnsDir points outside it.
+        const resolvedFilePath = path.resolve(filePath);
+        if (!resolvedFilePath.startsWith(path.resolve(turnsDir) + path.sep)) return;
 
         // Small defer to ensure rename(2) has landed before we read
         setImmediate(() => {

@@ -1,0 +1,373 @@
+/* DiffViewer Mobile PWA */
+*, *::before, *::after { box-sizing: border-box; }
+
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface2: #22263a;
+  --border: #2e3250;
+  --text: #e2e8f0;
+  --text-muted: #7a8499;
+  --green: #22c55e;
+  --green-dim: #166534;
+  --red: #ef4444;
+  --red-dim: #7f1d1d;
+  --yellow: #eab308;
+  --accent: #6366f1;
+  --radius: 12px;
+  --card-shadow: 0 4px 24px rgba(0,0,0,.45);
+}
+
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  overscroll-behavior: none;
+  touch-action: pan-y;
+  min-height: 100dvh;
+}
+
+/* ── Banner ── */
+#banner {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .5rem 1rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: .8rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+#banner .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+#banner.connecting .dot { background: var(--yellow); }
+#banner.connected   .dot { background: var(--green); }
+#banner.disconnected .dot { background: var(--red); }
+
+#banner .label {
+  flex: 1;
+}
+#banner .token-badge {
+  font-size: .7rem;
+  padding: .15rem .45rem;
+  border-radius: 999px;
+  background: var(--surface2);
+  color: var(--text-muted);
+}
+#banner .token-badge.present { color: var(--green); }
+
+/* ── Pairing screen ── */
+#pair-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 2rem 1.5rem;
+  min-height: calc(100dvh - 44px);
+}
+
+#pair-screen h1 {
+  font-size: 1.4rem;
+  margin: 0;
+  text-align: center;
+}
+
+#pair-screen p {
+  color: var(--text-muted);
+  margin: 0;
+  text-align: center;
+  max-width: 300px;
+}
+
+.pair-form {
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+  width: 100%;
+  max-width: 340px;
+}
+
+.pair-form input {
+  padding: .75rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: .95rem;
+  outline: none;
+  width: 100%;
+}
+.pair-form input:focus { border-color: var(--accent); }
+
+.pair-form input::placeholder { color: var(--text-muted); }
+
+/* ── Buttons ── */
+button {
+  cursor: pointer;
+  border: none;
+  border-radius: var(--radius);
+  font-size: .95rem;
+  font-weight: 600;
+  padding: .7rem 1.5rem;
+  transition: opacity .15s, transform .1s;
+}
+button:active { transform: scale(.97); }
+button:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-approve { background: var(--green); color: #fff; }
+.btn-reject  { background: var(--red);   color: #fff; }
+.btn-ghost   { background: var(--surface2); color: var(--text); }
+
+/* ── Card stack ── */
+#review-screen {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+#empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 4rem 2rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.card-wrap {
+  position: relative;
+  will-change: transform;
+  touch-action: pan-y;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+  position: relative;
+}
+
+/* drag tint overlays */
+.card::before, .card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .15s;
+  z-index: 2;
+}
+.card::before { background: linear-gradient(135deg, rgba(34,197,94,.18), transparent); } /* approve */
+.card::after  { background: linear-gradient(225deg, rgba(239,68,68,.18), transparent); } /* reject */
+
+.card.tinting-approve::before { opacity: 1; }
+.card.tinting-reject::after  { opacity: 1; }
+
+/* ── Card header ── */
+.card-header {
+  padding: .85rem 1rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+  background: var(--surface2);
+}
+
+.card-session {
+  font-size: .7rem;
+  font-family: monospace;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+
+.card-task {
+  font-size: .85rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.card-task.null-task {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.card-turn {
+  font-size: .75rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* ── File sections ── */
+.file-section {
+  border-bottom: 1px solid var(--border);
+}
+.file-section:last-child { border-bottom: none; }
+
+.file-header {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .6rem 1rem;
+  cursor: pointer;
+  user-select: none;
+  background: var(--surface);
+  font-size: .8rem;
+  font-family: monospace;
+}
+
+.file-header:active { background: var(--surface2); }
+
+.file-badge {
+  font-size: .65rem;
+  font-weight: 700;
+  padding: .1rem .35rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+.badge-new   { background: var(--green-dim);  color: var(--green); }
+.badge-edit  { background: #1e3a5f; color: #60a5fa; }
+
+.file-toggle {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: .9rem;
+  transition: transform .2s;
+}
+.file-section.collapsed .file-toggle { transform: rotate(-90deg); }
+
+.file-diff {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.file-section.collapsed .file-diff { display: none; }
+
+.diff-pre {
+  margin: 0;
+  font-family: 'SF Mono', 'Cascadia Code', monospace;
+  font-size: .72rem;
+  line-height: 1.55;
+  padding: .5rem 0;
+  min-width: 0;
+}
+
+.diff-line {
+  display: block;
+  padding: 0 1rem;
+  white-space: pre;
+}
+.diff-line.add    { background: rgba(34,197,94,.12);  color: #86efac; }
+.diff-line.remove { background: rgba(239,68,68,.12);  color: #fca5a5; }
+.diff-line.hunk   { color: #93c5fd; background: rgba(99,102,241,.08); }
+.diff-line.meta   { color: var(--text-muted); }
+
+/* ── Card actions ── */
+.card-actions {
+  display: flex;
+  gap: .75rem;
+  padding: .85rem 1rem;
+  background: var(--surface2);
+  border-top: 1px solid var(--border);
+}
+
+.card-actions button { flex: 1; }
+
+.no-task-note {
+  font-size: .75rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: .5rem 1rem;
+  background: var(--surface2);
+  border-top: 1px solid var(--border);
+}
+
+/* ── Gesture hint labels ── */
+.gesture-hint {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.5rem;
+  font-weight: 900;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .1s;
+  z-index: 10;
+  text-shadow: 0 2px 8px rgba(0,0,0,.4);
+  border: 3px solid currentColor;
+  border-radius: 8px;
+  padding: .2rem .6rem;
+}
+.gesture-hint.left  { right: 1.5rem; color: var(--red); }
+.gesture-hint.right { left: 1.5rem;  color: var(--green); }
+.card-wrap.hint-approve .gesture-hint.right { opacity: 1; }
+.card-wrap.hint-reject  .gesture-hint.left  { opacity: 1; }
+
+/* spring-back transition */
+.card-wrap.springing {
+  transition: transform .35s cubic-bezier(.34,1.56,.64,1);
+}
+
+/* ── Approved/rejected overlay ── */
+.card-dismissed {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  font-weight: 900;
+  border-radius: var(--radius);
+  letter-spacing: .1em;
+  z-index: 20;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .25s;
+}
+.card-dismissed.approved {
+  background: rgba(34,197,94,.18);
+  color: var(--green);
+}
+.card-dismissed.rejected {
+  background: rgba(239,68,68,.18);
+  color: var(--red);
+}
+.card-dismissed.show { opacity: 1; }
+
+/* ── Token-rejected error ── */
+#token-error {
+  margin: 1rem;
+  padding: 1rem;
+  background: var(--red-dim);
+  border: 1px solid var(--red);
+  border-radius: var(--radius);
+  color: #fca5a5;
+  font-size: .85rem;
+  display: none;
+}
+#token-error.show { display: block; }

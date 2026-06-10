@@ -8,8 +8,12 @@ const app = createApp();
 // serve browser/ assets; GET / -> browser/index.html
 app.use('/*', serveStatic({ root: './browser' }));
 
-// Watch roots: CLI args or DIFFVIEWER_WATCH_ROOTS (colon-separated)
-const roots = process.argv.slice(2).filter(Boolean);
+// Watch roots: CLI args (non-flag) or DIFFVIEWER_WATCH_ROOTS (colon-separated)
+const args = process.argv.slice(2);
+const mobileFlag = args.includes('--mobile') || process.env.DIFFVIEWER_MOBILE === '1';
+const pairFlag = args.includes('--pair');
+const roots = args.filter(a => !a.startsWith('--')).filter(Boolean);
+
 if (roots.length === 0 && process.env.DIFFVIEWER_WATCH_ROOTS) {
   roots.push(...process.env.DIFFVIEWER_WATCH_ROOTS.split(':').filter(Boolean));
 }
@@ -26,3 +30,41 @@ serve({ fetch: app.fetch, port: 3333, hostname: '127.0.0.1' }, (info) => {
     console.log(`Watching sidecar roots: ${roots.join(', ')}`);
   }
 });
+
+// ---- Mobile companion (--mobile or DIFFVIEWER_MOBILE=1) ----
+if (mobileFlag) {
+  // Lazy imports to keep startup fast when mobile is off
+  const { loadOrCreateToken } = await import('./src/mobile/auth.js');
+  const { createMobileServer } = await import('./src/mobile/index.js');
+  // qrcode-terminal is a CommonJS package
+  const { default: qrcode } = await import('qrcode-terminal');
+
+  const token = await loadOrCreateToken();
+
+  const { server: mobileServer } = await createMobileServer({
+    broadcaster: app._broadcaster,
+    roots,
+    options: {
+      token,
+      port: 3334,
+      hostname: '127.0.0.1',
+    },
+  });
+
+  const mobilePort = mobileServer.address().port;
+  console.log(`DiffViewer Mobile on http://localhost:${mobilePort}`);
+
+  if (pairFlag) {
+    const base = process.env.DIFFVIEWER_MOBILE_URL ?? `http://localhost:${mobilePort}`;
+    const pairingUrl = `${base}/#token=${token}`;
+    console.log(`\nPairing URL: ${pairingUrl}`);
+    console.log('Scan the QR to open the PWA with the token pre-loaded:\n');
+    qrcode.generate(pairingUrl, { small: true });
+    console.log(
+      '\nNote: for remote phone access, run:\n' +
+      '  tailscale serve --bg --https=443 127.0.0.1:3334\n' +
+      'Then set DIFFVIEWER_MOBILE_URL=https://<your-host>.ts.net and re-run --pair.\n' +
+      'Revoke by deleting ~/.diffviewer/mobile/token and restarting.'
+    );
+  }
+}

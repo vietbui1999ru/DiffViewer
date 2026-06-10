@@ -1,0 +1,11 @@
+{
+  "name": "DiffViewer Mobile",
+  "short_name": "DiffViewer",
+  "description": "Review and approve/reject agent diffs from your phone.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1117",
+  "theme_color": "#16213e",
+  "icons": []
+}

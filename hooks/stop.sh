@@ -66,6 +66,31 @@ fi
 COMPLETED_AT="$(node -e 'process.stdout.write(String(Date.now()))' 2>/dev/null)"
 [ -z "$COMPLETED_AT" ] && COMPLETED_AT="$(date +%s)000"
 
+# Resolve task id (§7 fix):
+#   1. $AGENTS_TASK_ID env var if non-empty
+#   2. Current branch name matching agent/<task-id> exactly → strip "agent/" prefix
+#   3. null
+TASK_ID_VAL="null"
+if [ -n "${AGENTS_TASK_ID:-}" ]; then
+  # Sanitize: only allow ^[A-Za-z0-9._-]+$
+  sanitized="$(printf '%s' "$AGENTS_TASK_ID" | tr -cd 'A-Za-z0-9._-')"
+  if [ -n "$sanitized" ]; then
+    TASK_ID_VAL="\"$sanitized\""
+  fi
+else
+  branch="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  case "$branch" in
+    agent/*)
+      suffix="${branch#agent/}"
+      # Validate suffix matches ^[A-Za-z0-9._-]+$
+      sanitized="$(printf '%s' "$suffix" | tr -cd 'A-Za-z0-9._-')"
+      if [ "$sanitized" = "$suffix" ] && [ -n "$suffix" ]; then
+        TASK_ID_VAL="\"$suffix\""
+      fi
+      ;;
+  esac
+fi
+
 # Build the envelope: jq -s reads all pending lines as array
 # Fields per spec §1: version, sessionId, harness, task, turnNumber, startedAt, completedAt, events
 # Strip internal .ts field from each event before writing — it is a transport-only field
@@ -74,11 +99,12 @@ jq -sc \
   --argjson n "$NEXT_N" \
   --argjson started "$STARTED_AT" \
   --argjson completed "$COMPLETED_AT" \
+  --argjson task "$TASK_ID_VAL" \
   '{
     version: 1,
     sessionId: $sid,
     harness: "claude-code",
-    task: null,
+    task: $task,
     turnNumber: $n,
     startedAt: $started,
     completedAt: $completed,
