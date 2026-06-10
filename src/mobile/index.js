@@ -87,7 +87,7 @@ export async function createMobileServer({ broadcaster, roots, options = {} }) {
       return c.json({ error: 'invalid body' }, 400);
     }
 
-    return handleApprove(c, body, hub, roots, token);
+    return handleApprove(c, body, hub, roots);
   });
 
   // ---- POST /reject ----
