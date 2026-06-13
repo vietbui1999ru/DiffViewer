@@ -40,8 +40,9 @@ The daemon binds **`127.0.0.1:3334` only**. It is never bound to a LAN/`0.0.0.0`
 interface — there is no plain-HTTP-on-LAN mode.
 
 - **Phone access (remote/real device)**: front the loopback port with
-  `tailscale serve --bg --https=443 127.0.0.1:3334` (or
-  `tailscale serve 3334`). Tailscale terminates real TLS (MagicDNS `*.ts.net` Let's
+  `tailscale serve --bg 3334` (Tailscale 1.60+; serves HTTPS on `:443` by default —
+  older releases used `tailscale serve --bg --https=443 127.0.0.1:3334`). Tailscale
+  terminates real TLS (MagicDNS `*.ts.net` Let's
   Encrypt cert) and only tailnet members can reach it. The tailnet is the trust
   boundary; the shared token (§4) is a second factor so a stray tailnet device cannot
   approve without it.

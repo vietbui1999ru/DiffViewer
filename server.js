@@ -55,15 +55,29 @@ if (mobileFlag) {
   console.log(`DiffViewer Mobile on http://localhost:${mobilePort}`);
 
   if (pairFlag) {
-    const base = process.env.DIFFVIEWER_MOBILE_URL ?? `http://localhost:${mobilePort}`;
-    const pairingUrl = `${base}/#token=${token}`;
+    const mobileUrl = process.env.DIFFVIEWER_MOBILE_URL;
+    // --pair is the REMOTE pairing path (a phone over Tailscale). Same-machine
+    // access just opens http://localhost:3334 directly, so refuse to emit an
+    // unreachable localhost QR — require an https tailnet URL and fail loud.
+    if (!mobileUrl || !mobileUrl.startsWith('https://')) {
+      console.error(
+        '\nERROR: --pair requires DIFFVIEWER_MOBILE_URL set to your https tailnet URL.\n' +
+        'A localhost QR cannot be reached from a phone. To pair a remote phone:\n\n' +
+        '  1. Expose the mobile listener over your tailnet (Tailscale 1.60+ syntax):\n' +
+        '       tailscale serve --bg 3334\n' +
+        '  2. Re-run with your MagicDNS host (shown by `tailscale status`):\n' +
+        '       DIFFVIEWER_MOBILE_URL=https://<your-host>.ts.net node server.js --mobile --pair\n\n' +
+        'Revoke by deleting ~/.diffviewer/mobile/token and restarting.'
+      );
+      process.exit(1);
+    }
+    const pairingUrl = `${mobileUrl}/#token=${token}`;
     console.log(`\nPairing URL: ${pairingUrl}`);
     console.log('Scan the QR to open the PWA with the token pre-loaded:\n');
     qrcode.generate(pairingUrl, { small: true });
     console.log(
-      '\nNote: for remote phone access, run:\n' +
-      '  tailscale serve --bg --https=443 127.0.0.1:3334\n' +
-      'Then set DIFFVIEWER_MOBILE_URL=https://<your-host>.ts.net and re-run --pair.\n' +
+      '\nServe it over your tailnet if you have not already (Tailscale 1.60+ syntax):\n' +
+      '  tailscale serve --bg 3334\n' +
       'Revoke by deleting ~/.diffviewer/mobile/token and restarting.'
     );
   }
