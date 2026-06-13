@@ -370,4 +370,179 @@ describe('mobile WS integration', () => {
 
     ws.close();
   });
+
+  it('WS-9: reconnecting socket replays rejected marker for a session rejected while disconnected (§6.3)', { timeout: 8000 }, async () => {
+    const root = makeTmpRoot('TASK-009');
+    tmpDirs.push(root);
+    const broadcaster = new Broadcaster();
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mobile-home-'));
+    tmpDirs.push(homeDir);
+
+    const { server, close } = await createMobileServer({
+      broadcaster,
+      roots: [root],
+      options: { token: TOKEN, port: 0, hostname: '127.0.0.1', homeDir },
+    });
+    servers.push({ close });
+    const port = server.address().port;
+
+    // Socket A connects, receives the turn, rejects it
+    const a = await connectAndAuth(`ws://127.0.0.1:${port}`, TOKEN);
+    await waitFor(() => a.messages.find(m => m.type === 'ready'));
+    broadcaster.emit(makeSnapshot('sess-rj', 1, 'TASK-009'));
+    await waitFor(() => a.messages.find(m => m.type === 'turn'));
+    const { digest } = a.messages.find(m => m.type === 'turn');
+
+    const res = await fetch(`http://127.0.0.1:${port}/reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({ sessionId: 'sess-rj', digest, taskId: 'TASK-009' }),
+    });
+    expect(res.status).toBe(200);
+    await waitFor(() => a.messages.find(m => m.type === 'rejected')); // A sees the live rejected
+    a.ws.close();
+
+    // Socket B connects fresh — simulates the phone reconnecting after the reject.
+    // It must replay BOTH the turn AND the rejected marker so the card greys out.
+    const b = await connectAndAuth(`ws://127.0.0.1:${port}`, TOKEN);
+    await waitFor(() => b.messages.find(m => m.type === 'ready'));
+    await waitFor(() => b.messages.find(m => m.type === 'turn' && m.snapshot.sessionId === 'sess-rj'));
+    await waitFor(() => b.messages.find(m => m.type === 'rejected' && m.sessionId === 'sess-rj'), 3000);
+    const rj = b.messages.find(m => m.type === 'rejected' && m.sessionId === 'sess-rj');
+    expect(rj).toBeDefined();
+    expect(rj.taskId).toBe('TASK-009');
+    b.ws.close();
+  });
+
+  it('WS-10: a new turn for a rejected session clears the rejected marker — reconnect card is not pre-greyed (§6.3)', { timeout: 8000 }, async () => {
+    const root = makeTmpRoot('TASK-010');
+    tmpDirs.push(root);
+    const broadcaster = new Broadcaster();
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mobile-home-'));
+    tmpDirs.push(homeDir);
+
+    const { server, close } = await createMobileServer({
+      broadcaster,
+      roots: [root],
+      options: { token: TOKEN, port: 0, hostname: '127.0.0.1', homeDir },
+    });
+    servers.push({ close });
+    const port = server.address().port;
+
+    const a = await connectAndAuth(`ws://127.0.0.1:${port}`, TOKEN);
+    await waitFor(() => a.messages.find(m => m.type === 'ready'));
+    broadcaster.emit(makeSnapshot('sess-rj2', 1, 'TASK-010'));
+    await waitFor(() => a.messages.find(m => m.type === 'turn' && m.snapshot.turnNumber === 1));
+    const { digest } = a.messages.find(m => m.type === 'turn' && m.snapshot.turnNumber === 1);
+
+    const res = await fetch(`http://127.0.0.1:${port}/reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({ sessionId: 'sess-rj2', digest, taskId: 'TASK-010' }),
+    });
+    expect(res.status).toBe(200);
+    await waitFor(() => a.messages.find(m => m.type === 'rejected'));
+
+    // Agent revises after the rejection: a NEW turn supersedes the rejected card.
+    broadcaster.emit(makeSnapshot('sess-rj2', 2, 'TASK-010'));
+    await waitFor(() => a.messages.find(m => m.type === 'turn' && m.snapshot.turnNumber === 2));
+    a.ws.close();
+
+    // Reconnect: must replay the fresh turn (turn 2) but NOT the stale rejected marker.
+    const b = await connectAndAuth(`ws://127.0.0.1:${port}`, TOKEN);
+    await waitFor(() => b.messages.find(m => m.type === 'turn' && m.snapshot.sessionId === 'sess-rj2'));
+    await new Promise(r => setTimeout(r, 150)); // grace for any erroneous rejected replay
+    expect(b.messages.find(m => m.type === 'rejected')).toBeUndefined();
+    const turn = b.messages.find(m => m.type === 'turn' && m.snapshot.sessionId === 'sess-rj2');
+    expect(turn.snapshot.turnNumber).toBe(2);
+    b.ws.close();
+  });
+
+  it('UNDO-1: POST /undo deletes the approval token and broadcasts undo', { timeout: 8000 }, async () => {
+    const root = makeTmpRoot('TASK-U1');
+    tmpDirs.push(root);
+    const broadcaster = new Broadcaster();
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mobile-home-'));
+    tmpDirs.push(homeDir);
+
+    const { server, close } = await createMobileServer({
+      broadcaster,
+      roots: [root],
+      options: { token: TOKEN, port: 0, hostname: '127.0.0.1', homeDir },
+    });
+    servers.push({ close });
+    const port = server.address().port;
+
+    const a = await connectAndAuth(`ws://127.0.0.1:${port}`, TOKEN);
+    await waitFor(() => a.messages.find(m => m.type === 'ready'));
+    broadcaster.emit(makeSnapshot('sess-u1', 1, 'TASK-U1'));
+    await waitFor(() => a.messages.find(m => m.type === 'turn'));
+    const { digest } = a.messages.find(m => m.type === 'turn');
+
+    // Approve → token written
+    const ar = await fetch(`http://127.0.0.1:${port}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({ sessionId: 'sess-u1', taskId: 'TASK-U1', digest }),
+    });
+    expect(ar.status).toBe(200);
+    const tokenPath = path.join(root, '.agents', 'approvals', 'TASK-U1.approved');
+    expect(fs.existsSync(tokenPath)).toBe(true);
+    await waitFor(() => a.messages.find(m => m.type === 'approved'));
+
+    // Undo → token deleted + undo broadcast
+    const ur = await fetch(`http://127.0.0.1:${port}/undo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({ sessionId: 'sess-u1', taskId: 'TASK-U1' }),
+    });
+    expect(ur.status).toBe(200);
+    expect(fs.existsSync(tokenPath)).toBe(false);
+    await waitFor(() => a.messages.find(m => m.type === 'undo' && m.taskId === 'TASK-U1'));
+    a.ws.close();
+  });
+
+  it('UNDO-2: undo clears the rejected marker so a reconnecting socket does not re-grey', { timeout: 8000 }, async () => {
+    const root = makeTmpRoot('TASK-U2');
+    tmpDirs.push(root);
+    const broadcaster = new Broadcaster();
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mobile-home-'));
+    tmpDirs.push(homeDir);
+
+    const { server, close } = await createMobileServer({
+      broadcaster,
+      roots: [root],
+      options: { token: TOKEN, port: 0, hostname: '127.0.0.1', homeDir },
+    });
+    servers.push({ close });
+    const port = server.address().port;
+
+    const a = await connectAndAuth(`ws://127.0.0.1:${port}`, TOKEN);
+    await waitFor(() => a.messages.find(m => m.type === 'ready'));
+    broadcaster.emit(makeSnapshot('sess-u2', 1, 'TASK-U2'));
+    await waitFor(() => a.messages.find(m => m.type === 'turn'));
+    const { digest } = a.messages.find(m => m.type === 'turn');
+
+    await fetch(`http://127.0.0.1:${port}/reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({ sessionId: 'sess-u2', taskId: 'TASK-U2', digest }),
+    });
+    await waitFor(() => a.messages.find(m => m.type === 'rejected'));
+
+    const ur = await fetch(`http://127.0.0.1:${port}/undo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({ sessionId: 'sess-u2', taskId: 'TASK-U2' }),
+    });
+    expect(ur.status).toBe(200);
+    a.ws.close();
+
+    // Reconnect: the cleared rejection must NOT replay.
+    const b = await connectAndAuth(`ws://127.0.0.1:${port}`, TOKEN);
+    await waitFor(() => b.messages.find(m => m.type === 'turn' && m.snapshot.sessionId === 'sess-u2'));
+    await new Promise(r => setTimeout(r, 150));
+    expect(b.messages.find(m => m.type === 'rejected')).toBeUndefined();
+    b.ws.close();
+  });
 });

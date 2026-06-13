@@ -122,6 +122,21 @@ function disconnect() {
   if (ws) { ws.close(); ws = null; }
 }
 
+// Force an immediate reconnect on foreground / network-restore. iOS suspends the
+// socket AND the backoff timer while the PWA is backgrounded, so a timer-driven
+// reconnect can stall up to BACKOFF_MAX (or never fire if 'close' was missed).
+// visibilitychange/online are delivered on resume, so we reset backoff and
+// reconnect now. A still-OPEN/CONNECTING socket is left alone (no wasteful churn).
+// Known limitation: a "zombie" socket that reads OPEN after resume isn't replaced
+// here — that needs a heartbeat (deferred, Fork 4 reconnect hardening).
+function reconnectNow() {
+  if (!token) return;
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  backoffMs = BACKOFF_MIN;
+  connect();
+}
+
 // ──────────────────────────────────────────
 // 4. Message handlers
 // ──────────────────────────────────────────
@@ -140,6 +155,9 @@ function handleMessage(msg) {
       break;
     case 'rejected':
       markCard(msg.sessionId, 'rejected');
+      break;
+    case 'undo':
+      unMarkCard(msg.sessionId);
       break;
   }
 }
@@ -174,12 +192,49 @@ function handleTurn(snapshot, digest) {
 function markCard(sessionId, state) {
   const entry = cards.get(sessionId);
   if (!entry) return;
+  // Lock the card against further decisions. Covers the local submit path AND a
+  // decision broadcast from another device over WS.
+  entry.decided = true;
   const overlay = entry.el.querySelector('.card-dismissed');
   if (!overlay) return;
   overlay.className = `card-dismissed ${state} show`;
   // Disable action buttons
   for (const btn of entry.el.querySelectorAll('.card-actions button')) {
     btn.disabled = true;
+  }
+}
+
+// Revert a decision (undo): hide the overlay, unlock the gesture, re-enable the
+// action buttons. Driven by the {type:'undo'} broadcast (so every device reverts)
+// and optimistically by submitUndo.
+function unMarkCard(sessionId) {
+  const entry = cards.get(sessionId);
+  if (!entry) return;
+  entry.decided = false;
+  const overlay = entry.el.querySelector('.card-dismissed');
+  if (overlay) overlay.className = 'card-dismissed';
+  const hasTask = !!entry.snapshot.task;
+  for (const btn of entry.el.querySelectorAll('.card-actions button')) {
+    btn.disabled = !hasTask;
+  }
+}
+
+async function submitUndo(snapshot) {
+  if (!token) return;
+  if (!snapshot.task) return;
+  let res;
+  try {
+    res = await fetch('/undo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ sessionId: snapshot.sessionId, taskId: snapshot.task }),
+    });
+  } catch {
+    return; // network failure — the WS undo broadcast reconciles on reconnect
+  }
+  if (res.ok) {
+    // Optimistic local revert; the server also broadcasts {type:'undo'} (idempotent).
+    unMarkCard(snapshot.sessionId);
   }
 }
 
@@ -255,9 +310,14 @@ function buildCard(snapshot, digest) {
   actions.appendChild(approveBtn);
   card.appendChild(actions);
 
-  // -- Dismissed overlay --
+  // -- Dismissed overlay (with Undo to revert an accidental decision) --
   const dismissed = document.createElement('div');
   dismissed.className = 'card-dismissed';
+  const undoBtn = document.createElement('button');
+  undoBtn.className = 'btn-undo';
+  undoBtn.textContent = 'Undo';
+  undoBtn.addEventListener('click', () => submitUndo(snapshot));
+  dismissed.appendChild(undoBtn);
   card.appendChild(dismissed);
 
   wrap.appendChild(card);
@@ -344,6 +404,8 @@ function attachGesture(wrap, entry) {
   wrap.addEventListener('pointerdown', (e) => {
     // Ignore taps on buttons or file headers
     if (e.target.closest('button, .file-header')) return;
+    // Locked once decided — the first approve/reject wins; no re-swipe.
+    if (entry.decided) return;
     active = true;
     startX = e.clientX;
     startT = performance.now();
@@ -408,6 +470,14 @@ async function submitDecision(action, snapshot, digest) {
   if (!token) return;
   if (!snapshot.task) return;
 
+  // First decision wins. Lock the card BEFORE the request so a second swipe/click
+  // (or the opposite action) can't fire while this one is in flight — otherwise an
+  // approve and a reject could both reach the server. Reverted below if the request
+  // fails, so the user can retry.
+  const entry = cards.get(cardKey(snapshot));
+  if (entry?.decided) return;
+  if (entry) entry.decided = true;
+
   const url = action === 'approve' ? '/approve' : '/reject';
 
   let res;
@@ -425,29 +495,30 @@ async function submitDecision(action, snapshot, digest) {
       }),
     });
   } catch {
-    // Network failure — will rely on WS reconnect
+    // Network failure — unlock so a reconnect/retry can resubmit.
+    if (entry) entry.decided = false;
     return;
   }
 
   if (res.status === 401) {
+    if (entry) entry.decided = false;
     showTokenError();
     return;
   }
 
   if (res.status === 409) {
-    // Stale — drop card; server will re-push fresh turn via WS
-    const key = cardKey(snapshot);
-    const entry = cards.get(key);
+    // Stale — drop card; server will re-push fresh turn via WS.
     if (entry) {
       entry.el.remove();
-      cards.delete(key);
+      cards.delete(cardKey(snapshot));
     }
     showEmptyIfNeeded();
     return;
   }
 
   if (!res.ok) {
-    // Other errors: silently log; card stays
+    // Other errors: unlock so the card can be retried; it stays on screen.
+    if (entry) entry.decided = false;
     console.warn(`[DiffViewer] ${action} failed: ${res.status}`);
     return;
   }
@@ -542,6 +613,14 @@ function boot() {
     showReviewScreen();
     connect();
   });
+
+  // Wake the WebSocket promptly when the PWA is foregrounded or the network
+  // returns — iOS suspends the socket + backoff timer in the background, so a
+  // timer-driven reconnect can lag badly. These events fire on resume.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') reconnectNow();
+  });
+  window.addEventListener('online', reconnectNow);
 }
 
 if (document.readyState === 'loading') {

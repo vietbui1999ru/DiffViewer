@@ -30,6 +30,10 @@ export class WsHub {
     this._latest = new Map();
     // Replay buffer: array of {sessionId, snapshot, digest} (bounded 20)
     this._replayBuf = [];
+    // Rejected set: Map<sessionId, {type:'rejected', taskId, sessionId}> (§6.3).
+    // Replayed on auth so a reconnecting phone re-greys a rejected card.
+    // In-memory only; lost on restart by design.
+    this._rejected = new Map();
 
     this._wss = null; // set by attach()
   }
@@ -53,11 +57,17 @@ export class WsHub {
       // Origin-host == Host pre-upgrade check (§6.4)
       const origin = req.headers['origin'];
       const host = req.headers['host'];
+      if (process.env.DIFFVIEWER_MOBILE_DEBUG) {
+        console.error(`[mobile-ws] upgrade /ws origin=${origin ?? '(none)'} host=${host ?? '(none)'}`);
+      }
       if (origin) {
         try {
           const originHost = new URL(origin).host;
           const reqHost = host ?? '';
           if (originHost !== reqHost) {
+            if (process.env.DIFFVIEWER_MOBILE_DEBUG) {
+              console.error(`[mobile-ws] 403 Origin mismatch: originHost=${originHost} !== reqHost=${reqHost}`);
+            }
             socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
             socket.destroy();
             return;
@@ -124,6 +134,9 @@ export class WsHub {
       }
 
       if (frame.type !== 'auth' || !checkToken(frame.token, this._token)) {
+        if (process.env.DIFFVIEWER_MOBILE_DEBUG) {
+          console.error(`[mobile-ws] 4401 bad auth: type=${frame.type} tokenLen=${frame.token ? String(frame.token).length : 0}`);
+        }
         ws.close(4401, 'bad auth');
         this._all.delete(ws);
         return;
@@ -132,6 +145,9 @@ export class WsHub {
       // Authenticated
       authenticated = true;
       this._authed.add(ws);
+      if (process.env.DIFFVIEWER_MOBILE_DEBUG) {
+        console.error('[mobile-ws] authed OK -> ready sent');
+      }
 
       // Send ready
       this._send(ws, { type: 'ready' });
@@ -139,6 +155,12 @@ export class WsHub {
       // Replay buffer: send all buffered {snapshot, digest} pairs
       for (const entry of this._replayBuf) {
         this._send(ws, { type: 'turn', snapshot: entry.snapshot, digest: entry.digest });
+      }
+
+      // Replay rejected markers (§6.3) — sent AFTER turns so the card exists
+      // client-side when the grey-out is applied.
+      for (const msg of this._rejected.values()) {
+        this._send(ws, msg);
       }
 
       ws.on('message', () => {
@@ -181,6 +203,10 @@ export class WsHub {
     // Record latest
     this._latest.set(sessionId, { digest, task, turnNumber, snapshot });
 
+    // A new turn supersedes any prior rejection of this session's card (§6.3):
+    // the fresh card must not arrive pre-greyed on a reconnect.
+    this._rejected.delete(sessionId);
+
     // Update bounded replay buffer
     // Remove old entry for this session if present, then append
     const idx = this._replayBuf.findIndex(e => e.sessionId === sessionId);
@@ -205,6 +231,26 @@ export class WsHub {
     for (const ws of [...this._authed]) {
       this._send(ws, msg);
     }
+  }
+
+  /**
+   * reject(taskId, sessionId) — record the rejected card in the rejected set
+   * (so reconnecting phones re-grey it, §6.3) and broadcast it live.
+   */
+  reject(taskId, sessionId) {
+    const msg = { type: 'rejected', taskId, sessionId };
+    this._rejected.set(sessionId, msg);
+    this.broadcast(msg);
+  }
+
+  /**
+   * undo(taskId, sessionId) — revert a decision: clear the rejected marker (so it
+   * is not replayed on reconnect) and broadcast {type:'undo'} so every device
+   * un-marks the card. Token deletion (approve revert) is handled by the caller.
+   */
+  undo(taskId, sessionId) {
+    this._rejected.delete(sessionId);
+    this.broadcast({ type: 'undo', taskId, sessionId });
   }
 
   /**

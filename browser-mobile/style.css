@@ -357,7 +357,19 @@ button:disabled { opacity: .4; cursor: not-allowed; transform: none; }
   background: rgba(239,68,68,.18);
   color: var(--red);
 }
-.card-dismissed.show { opacity: 1; }
+.card-dismissed.show { opacity: 1; pointer-events: auto; }
+
+.card-dismissed .btn-undo {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: normal;
+  padding: .6rem 1.4rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  background: var(--surface);
+  color: inherit;
+  cursor: pointer;
+}
 
 /* ── Token-rejected error ── */
 #token-error {
