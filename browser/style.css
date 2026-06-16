@@ -1,7 +1,19 @@
 :root { font-family: ui-monospace, monospace; }
 body { margin: 0; background: #0d1117; color: #c9d1d9; }
 header { display: flex; gap: 1rem; align-items: baseline; padding: 0.75rem 1rem; border-bottom: 1px solid #30363d; }
+nav { display: flex; gap: 0.4rem; }
+.tab { background: #161b22; color: #c9d1d9; border: 1px solid #30363d; border-radius: 999px; padding: 0.25rem 0.7rem; cursor: pointer; font: inherit; }
+.tab.is-active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
 #status { color: #f85149; font-size: 0.85rem; }
+#architecture { margin: 1rem; }
+.architecture-toolbar { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; margin-bottom: 1rem; }
+.architecture-toolbar h2 { margin: 0 0 0.25rem; }
+#architecture-meta { margin: 0; color: #8b949e; }
+#architecture-refresh { background: #238636; color: #fff; border: 0; border-radius: 6px; padding: 0.45rem 0.8rem; cursor: pointer; font: inherit; }
+.architecture-output { overflow: auto; min-height: 22rem; border: 1px solid #30363d; border-radius: 8px; background: #161b22; padding: 1rem; }
+.architecture-empty, .architecture-error { margin: 0; color: #8b949e; }
+.architecture-error { color: #f85149; }
+.mermaid { min-width: max-content; }
 .turn-card { border: 1px solid #30363d; border-radius: 8px; margin: 1rem; padding: 0.5rem 1rem; }
 .turn-title { font-weight: 600; margin-bottom: 0.5rem; }
 .file-header { display: block; width: 100%; text-align: left; background: none; border: 0; color: inherit; cursor: pointer; padding: 0.35rem 0; font: inherit; }

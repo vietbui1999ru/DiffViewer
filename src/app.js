@@ -4,6 +4,7 @@ import { SessionRegistry } from './turnBuffer.js';
 import { Broadcaster } from './broadcaster.js';
 import { normalizeEvent } from './normalizer.js';
 import { makeSteerHandler } from './steer.js';
+import { loadArchitectureView } from './architecture.js';
 
 const KNOWN_TOOLS = new Set(['write', 'edit', 'multiedit']);
 
@@ -53,7 +54,15 @@ export function createApp(deps = {}) {
     })
   );
 
-  app.get('/', (c) => c.text('DiffViewer v0.5'));
+  app.get('/api/architecture', async (c) => {
+    const result = await loadArchitectureView(deps.architectureRoot ?? process.cwd(), deps.env ?? process.env);
+    if (result.error) return c.json({ error: result.error, path: result.path }, 400);
+    return c.json(result);
+  });
+
+  if (deps.rootPlaceholder !== false) {
+    app.get('/', (c) => c.text('DiffViewer v0.5'));
+  }
 
   // exposed so server.js can share the same instances with /stream and /steer
   app._registry = registry;
