@@ -1,0 +1,28 @@
+{
+  "metadata": {
+    "repo_name": "demo-repo",
+    "generated_at": "2026-06-15T00:00:00Z"
+  },
+  "snapshotCommit": "abc123",
+  "components": [
+    {
+      "component_id": "app.api",
+      "name": "API Layer",
+      "can_expand": true,
+      "source_cluster_ids": ["cluster-1"]
+    },
+    {
+      "component_id": "app.core",
+      "name": "Core Engine"
+    }
+  ],
+  "components_relations": [
+    {
+      "src_id": "app.api",
+      "dst_id": "app.core",
+      "label": "calls"
+    }
+  ],
+  "files": [],
+  "methods_index": []
+}

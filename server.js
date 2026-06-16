@@ -17,6 +17,8 @@ if (roots.length === 0 && process.env.DIFFVIEWER_WATCH_ROOTS) {
 
 const app = createApp({
   annotateExec: makeDefaultAnnotateExec({ roots }),
+  architectureRoot: roots[0] ?? process.cwd(),
+  rootPlaceholder: false,
 });
 
 // serve browser/ assets; GET / -> browser/index.html

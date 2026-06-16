@@ -30,7 +30,21 @@ open http://localhost:3333
 ```
 
 v0.5 scope: per-turn grouped diff cards in the browser + clipboard steer.
-Neovim plugin and the architecture panel are planned for v1 (see `docs/PRD.md`).
+
+## Architecture view (Path A scaffold)
+
+The desktop UI has an Architecture tab backed by `GET /api/architecture`. DiffViewer
+does not run CodeBoarding; it reads an existing CodeBoarding artifact from
+`<repo>/.codeboarding/analysis.json` and transforms the top-level component graph
+to Mermaid in Node. Set `DIFFVIEWER_ARCH_PATH` to point at another artifact path.
+
+```bash
+node server.js <repo>
+open http://localhost:3333
+```
+
+Open the Architecture tab after generating `analysis.json`. Missing or malformed
+artifacts render inline empty/error states without affecting the diff feed.
 
 ## Mobile companion (MVP-0)
 
