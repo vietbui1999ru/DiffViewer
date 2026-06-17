@@ -1,7 +1,7 @@
 // diffviewer.js — OpenCode plugin: captures file-write events per turn and
 // flushes them as sidecar snapshot files per the DiffViewer v0.6 spec §1-3.
 //
-// Transport only. On tool.execute.before/after pairs for write/edit tools:
+// Transport only. On tool.execute.before/after pairs for write/edit/apply_patch tools:
 // capture {path, oldContent, newContent} into a per-sessionID pending list.
 // On session.status idle (or deprecated session.idle twin), flush pending to
 // <repo>/.diffviewer/turns/<sanitized-sessionID>/turn-<N>.json using the
@@ -19,8 +19,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 
-// Tools whose writes we capture. OC uses lowercase names.
-const WRITE_TOOLS = new Set(['write', 'edit'])
+// Tools whose writes we capture. OC uses lowercase names; OpenCode's
+// file-editing tool in this environment is apply_patch.
+const WRITE_TOOLS = new Set(['write', 'edit', 'apply_patch'])
 
 // Same idle-detection logic as Commandr checkpoint.js.
 const isTurnEnd = (event) =>
@@ -42,6 +43,23 @@ function readFileSafe(filePath) {
   } catch {
     return ''
   }
+}
+
+function resolveFilePath(filePath, root) {
+  return path.isAbsolute(filePath) ? filePath : path.join(root, filePath)
+}
+
+function parseApplyPatchFiles(patchText) {
+  const files = []
+  const seen = new Set()
+  for (const line of String(patchText ?? '').split('\n')) {
+    const match = line.match(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/)
+    if (match && !seen.has(match[1])) {
+      seen.add(match[1])
+      files.push(match[1])
+    }
+  }
+  return files
 }
 
 // Resolve repo root from a directory via git rev-parse, fail-silently.
@@ -160,30 +178,45 @@ export const DiffViewerPlugin = async ({ directory, worktree }) => {
     'tool.execute.before': async ({ tool, sessionID, callID }, { args }) => {
       if (!WRITE_TOOLS.has(tool)) return
 
+      if (tool === 'apply_patch') {
+        const root = await resolveRepoRoot(pluginDir)
+        if (!root) return
+
+        const entries = parseApplyPatchFiles(args?.patchText).map((filePath) => {
+          const resolved = resolveFilePath(filePath, root)
+          return { sessionID, tool, filePath: resolved, oldContent: readFileSafe(resolved) }
+        })
+
+        if (entries.length) inFlight.set(`${sessionID}:${callID}`, entries)
+        return
+      }
+
       const filePath = args?.filePath ?? args?.file_path
       if (!filePath) return
 
       const oldContent = readFileSafe(filePath)
-      inFlight.set(`${sessionID}:${callID}`, { sessionID, tool, filePath, oldContent })
+      inFlight.set(`${sessionID}:${callID}`, [{ sessionID, tool, filePath, oldContent }])
     },
 
     'tool.execute.after': async ({ tool, sessionID, callID }, _output) => {
-      const pending = inFlight.get(`${sessionID}:${callID}`)
-      if (!pending) return
+      const entries = inFlight.get(`${sessionID}:${callID}`)
+      if (!entries) return
       inFlight.delete(`${sessionID}:${callID}`)
 
-      const filePath = pending.filePath
-      const newContent = readFileSafe(filePath)
-
       const sess = getOrCreateSession(sessionID)
-      if (sess.startedAt === null) sess.startedAt = Date.now()
+      for (const pending of entries) {
+        const filePath = pending.filePath
+        const newContent = readFileSafe(filePath)
 
-      sess.pending.push({
-        tool: pending.tool,
-        path: filePath,
-        oldContent: pending.oldContent,
-        newContent,
-      })
+        if (sess.startedAt === null) sess.startedAt = Date.now()
+
+        sess.pending.push({
+          tool: pending.tool,
+          path: filePath,
+          oldContent: pending.oldContent,
+          newContent,
+        })
+      }
     },
 
     event: async ({ event }) => {

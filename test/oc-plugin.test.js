@@ -122,7 +122,7 @@ describe('oc-plugin — tool.execute.before / after pairing', () => {
     const snap = readTurnFile(repo.root, 'sess-1')
     expect(snap).not.toBeNull()
     expect(snap.events).toHaveLength(1)
-    expect(snap.events[0].path).toBe(filePath)
+    expect(fs.realpathSync(snap.events[0].path)).toBe(fs.realpathSync(filePath))
     expect(snap.events[0].oldContent).toBe('old content\n')
     expect(snap.events[0].newContent).toBe('new content\n')
     expect(snap.events[0].tool).toBe('write')
@@ -182,6 +182,36 @@ describe('oc-plugin — tool.execute.before / after pairing', () => {
     const snap = readTurnFile(repo.root, 'sess-4')
     expect(snap.events[0].oldContent).toBe('')
     expect(snap.events[0].newContent).toBe('created\n')
+  })
+
+  it('OP12 apply_patch delete+add overwrite is captured once', async () => {
+    const filePath = path.join(repo.root, 'patch-me.txt')
+    fs.writeFileSync(filePath, 'before\n')
+
+    await hooks['tool.execute.before']?.(
+      { tool: 'apply_patch', sessionID: 'sess-12', callID: 'call-12' },
+      { args: { patchText: `*** Begin Patch
+*** Delete File: patch-me.txt
+*** Add File: patch-me.txt
++after
+*** End Patch` } }
+    )
+
+    fs.writeFileSync(filePath, 'after\n')
+
+    await hooks['tool.execute.after']?.(
+      { tool: 'apply_patch', sessionID: 'sess-12', callID: 'call-12' },
+      { title: 'patch', output: '', metadata: {} }
+    )
+    await fireIdle(hooks, 'sess-12')
+
+    const snap = readTurnFile(repo.root, 'sess-12')
+    expect(snap).not.toBeNull()
+    expect(snap.events).toHaveLength(1)
+    expect(snap.events[0].tool).toBe('apply_patch')
+    expect(fs.realpathSync(snap.events[0].path)).toBe(fs.realpathSync(filePath))
+    expect(snap.events[0].oldContent).toBe('before\n')
+    expect(snap.events[0].newContent).toBe('after\n')
   })
 })
 
