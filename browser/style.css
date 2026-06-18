@@ -12,3 +12,7 @@ header { display: flex; gap: 1rem; align-items: baseline; padding: 0.75rem 1rem;
 .steer { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
 .steer-input { flex: 1; min-height: 2.5rem; background: #161b22; color: inherit; border: 1px solid #30363d; border-radius: 6px; }
 .steer-send { background: #238636; color: #fff; border: 0; border-radius: 6px; padding: 0 1rem; cursor: pointer; }
+.annotation { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
+.annotation-input { flex: 1; min-height: 2rem; background: #161b22; color: inherit; border: 1px solid #30363d; border-radius: 6px; }
+.annotation-send { background: #1f6feb; color: #fff; border: 0; border-radius: 6px; padding: 0 0.9rem; cursor: pointer; }
+.annotation-send:disabled { background: #21262d; color: #8b949e; cursor: not-allowed; }

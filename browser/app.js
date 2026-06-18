@@ -12,7 +12,55 @@ function el(doc, tag, props = {}, children = []) {
   return node;
 }
 
-function renderFileCard(ev, doc) {
+function renderAnnotationBox(ev, snapshot, doc) {
+  const textarea = el(doc, 'textarea', {
+    className: 'annotation-input',
+    placeholder: 'Annotate this file…',
+  });
+  textarea.dataset.testid = 'annotation-input';
+
+  const btn = el(doc, 'button', { textContent: 'Note', className: 'annotation-send' });
+  btn.dataset.testid = 'annotation-send';
+
+  const hasTask = typeof snapshot.task === 'string' && snapshot.task;
+  if (!hasTask) {
+    btn.disabled = true;
+    btn.title = 'No task active — annotation requires a bus task';
+  }
+
+  btn.addEventListener('click', async () => {
+    if (!hasTask) return;
+    const body = textarea.value.trim();
+    if (!body) return;
+    try {
+      const res = await fetch('/annotate', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          task: snapshot.task,
+          turn: snapshot.turnNumber,
+          anchor: `card:${ev.path}`,
+          bodyText: body,
+          author: 'human',
+        }),
+      });
+      if (res.ok) {
+        textarea.value = '';
+        btn.textContent = 'Noted';
+        setTimeout(() => { btn.textContent = 'Note'; }, 1500);
+      } else {
+        btn.textContent = 'Error';
+        setTimeout(() => { btn.textContent = 'Note'; }, 2000);
+      }
+    } catch {
+      btn.textContent = 'Disconnected';
+      setTimeout(() => { btn.textContent = 'Note'; }, 2000);
+    }
+  });
+
+  return el(doc, 'div', { className: 'annotation' }, [textarea, btn]);
+}
+
+function renderFileCard(ev, snapshot, doc) {
   const badge = el(doc, 'span', { textContent: ev.tool, className: `badge badge-${ev.tool}` });
   badge.dataset.testid = 'tool-badge';
 
@@ -37,9 +85,15 @@ function renderFileCard(ev, doc) {
     body.textContent = ev.unifiedDiff;
   }
 
-  header.addEventListener('click', () => { body.hidden = !body.hidden; });
+  const annotation = renderAnnotationBox(ev, snapshot, doc);
+  annotation.hidden = true;
 
-  const card = el(doc, 'div', { className: 'file-card' }, [header, body]);
+  header.addEventListener('click', () => {
+    body.hidden = !body.hidden;
+    annotation.hidden = body.hidden;
+  });
+
+  const card = el(doc, 'div', { className: 'file-card' }, [header, body, annotation]);
   card.dataset.testid = 'file-card';
   return card;
 }
@@ -77,7 +131,7 @@ export function renderTurnCard(snapshot, doc = document) {
   const card = el(doc, 'section', { className: 'turn-card' }, [title]);
   card.dataset.testid = 'turn-card';
   card.dataset.session = snapshot.sessionId;
-  for (const ev of snapshot.events) card.append(renderFileCard(ev, doc));
+  for (const ev of snapshot.events) card.append(renderFileCard(ev, snapshot, doc));
   card.append(steer);
   return card;
 }

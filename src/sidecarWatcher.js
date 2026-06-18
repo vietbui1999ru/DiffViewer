@@ -11,7 +11,7 @@ function extractN(basename) {
 
 // Ingest a single turn-N.json file: parse, validate, normalize, flush, broadcast, unlink.
 // Returns true on success, false on any error (leaves file in place on error).
-function ingestFile(filePath, { registry, broadcaster, normalizeEvent }) {
+function ingestFile(filePath, { registry, broadcaster, normalizeEvent, openedSessions, onFirstTurn, onSubsequentTurn }) {
   let raw;
   try {
     raw = fs.readFileSync(filePath, 'utf8');
@@ -76,6 +76,16 @@ function ingestFile(filePath, { registry, broadcaster, normalizeEvent }) {
     // §7: propagate task id from the turn file into the snapshot
     snapshot.task = typeof parsed.task === 'string' && parsed.task ? parsed.task : null;
     broadcaster.emit(snapshot);
+    // Open-once-then-notify: only the live watch path passes openedSessions, so
+    // the startup scan never triggers onFirstTurn (scan deps omit the Set).
+    if (openedSessions) {
+      if (!openedSessions.has(sessionId)) {
+        openedSessions.add(sessionId);
+        if (onFirstTurn) onFirstTurn(sessionId);
+      } else if (onSubsequentTurn) {
+        onSubsequentTurn(sessionId, snapshot);
+      }
+    }
     // Unlink only after a successful broadcast (spec §4: "After a successful broadcast the server unlinks").
     try {
       fs.unlinkSync(filePath);
@@ -117,10 +127,20 @@ function startupScan(sessionDir, deps) {
  * Returns a watcher handle with .close() method.
  */
 export function createSidecarWatcher(roots, deps = {}) {
-  const effectiveDeps = {
+  const baseDeps = {
     registry: deps.registry,
     broadcaster: deps.broadcaster,
     normalizeEvent: deps.normalizeEvent ?? defaultNormalizeEvent,
+  };
+  // Live-watch deps carry the open-once-then-notify callbacks. The startup scan
+  // uses baseDeps (no openedSessions) so pre-existing turns never trigger onFirstTurn
+  // and do not pre-populate the Set — a session's first LIVE turn still opens the tab.
+  const openedSessions = new Set();
+  const liveDeps = {
+    ...baseDeps,
+    openedSessions,
+    onFirstTurn: deps.onFirstTurn ?? (() => {}),
+    onSubsequentTurn: deps.onSubsequentTurn ?? (() => {}),
   };
 
   const fswatchers = [];
@@ -143,7 +163,7 @@ export function createSidecarWatcher(roots, deps = {}) {
         try {
           const sst = fs.lstatSync(sessionDir);
           if (sst.isSymbolicLink() || !sst.isDirectory()) continue;
-          startupScan(sessionDir, effectiveDeps);
+          startupScan(sessionDir, baseDeps);
         } catch {}
       }
     } catch {}
@@ -168,7 +188,7 @@ export function createSidecarWatcher(roots, deps = {}) {
         setImmediate(() => {
           try {
             if (!fs.existsSync(filePath)) return; // already consumed or transient
-            ingestFile(filePath, effectiveDeps);
+            ingestFile(filePath, liveDeps);
           } catch (err) {
             process.stderr.write(`[sidecarWatcher] handler error: ${err.message}\n`);
           }
