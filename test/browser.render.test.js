@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderTurnCard, updateTabTitle } from '../browser/app.js';
+import { renderArchitecture, renderTurnCard, updateTabTitle } from '../browser/app.js';
 
 const snap = {
   sessionId: 's1',
@@ -108,5 +108,32 @@ describe('renderTurnCard — annotation box (ANN-UI)', () => {
     } finally {
       global.fetch = origFetch;
     }
+  });
+});
+
+describe('renderArchitecture', () => {
+  beforeEach(() => {
+    document.body.innerHTML = `
+      <p id="architecture-meta"></p>
+      <div id="architecture-output"></div>
+    `;
+  });
+
+  it('renders a mermaid diagram and metadata', () => {
+    renderArchitecture({
+      mermaid: 'graph LR\n  a["A"]',
+      meta: { repoName: 'demo', componentCount: 1, relationCount: 0 },
+    }, document, null);
+
+    expect(document.getElementById('architecture-meta').textContent).toContain('demo');
+    expect(document.querySelector('[data-testid="architecture-diagram"]').textContent).toContain('graph LR');
+  });
+
+  it('renders empty and error states inline', () => {
+    renderArchitecture({ state: 'empty', hint: 'run CodeBoarding' }, document, null);
+    expect(document.getElementById('architecture-output').textContent).toContain('run CodeBoarding');
+
+    renderArchitecture({ error: 'bad analysis' }, document, null);
+    expect(document.getElementById('architecture-output').textContent).toContain('bad analysis');
   });
 });

@@ -136,10 +136,73 @@ export function renderTurnCard(snapshot, doc = document) {
   return card;
 }
 
+export function renderArchitecture(data, doc = document, mermaid = globalThis.window?.mermaid) {
+  const output = doc.getElementById('architecture-output');
+  const meta = doc.getElementById('architecture-meta');
+  if (!output || !meta) return;
+
+  output.replaceChildren();
+  meta.textContent = '';
+
+  if (data.error) {
+    output.append(el(doc, 'p', { className: 'architecture-error', textContent: data.error }));
+    return;
+  }
+
+  if (data.state === 'empty') {
+    output.append(el(doc, 'p', { className: 'architecture-empty', textContent: data.hint }));
+    return;
+  }
+
+  const details = data.meta ?? {};
+  meta.textContent = [
+    details.repoName,
+    details.componentCount !== undefined ? `${details.componentCount} components` : null,
+    details.relationCount !== undefined ? `${details.relationCount} relations` : null,
+  ].filter(Boolean).join(' · ');
+
+  const diagram = el(doc, 'div', { className: 'mermaid', textContent: data.mermaid ?? '' });
+  diagram.dataset.testid = 'architecture-diagram';
+  output.append(diagram);
+  if (mermaid?.run) mermaid.run({ nodes: [diagram] });
+}
+
+async function loadArchitecture() {
+  const output = document.getElementById('architecture-output');
+  if (output) output.textContent = 'Loading architecture...';
+  try {
+    const res = await fetch('/api/architecture');
+    const data = await res.json();
+    renderArchitecture(data);
+  } catch (err) {
+    renderArchitecture({ error: `Unable to load architecture: ${err.message}` });
+  }
+}
+
+function setupTabs() {
+  const tabs = [...document.querySelectorAll('.tab[data-view]')];
+  const views = [document.getElementById('turns'), document.getElementById('architecture')].filter(Boolean);
+  let architectureLoaded = false;
+  for (const tab of tabs) {
+    tab.addEventListener('click', () => {
+      for (const t of tabs) t.classList.toggle('is-active', t === tab);
+      for (const view of views) view.hidden = view.id !== tab.dataset.view;
+      if (tab.dataset.view === 'architecture' && !architectureLoaded) {
+        architectureLoaded = true;
+        loadArchitecture();
+      }
+    });
+  }
+  document.getElementById('architecture-refresh')?.addEventListener('click', loadArchitecture);
+}
+
 export function init() {
   const root = document.getElementById('turns');
   const status = document.getElementById('status');
   let count = 0;
+
+  if (window.mermaid?.initialize) window.mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+  setupTabs();
 
   const es = new EventSource('/stream');
   es.addEventListener('turn-complete', (e) => {
