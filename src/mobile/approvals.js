@@ -204,3 +204,31 @@ export function writeApprovalToken(root, taskId, auditObj) {
 
   return {};
 }
+
+// ---- deleteApprovalToken ----
+
+/**
+ * deleteApprovalToken(root, taskId) -> {deleted: bool}
+ *
+ * Reverts an approval (undo): removes <root>/.agents/approvals/<taskId>.approved.
+ * Idempotent — returns {deleted:false} if the token is absent (e.g. undoing a
+ * reject, which never wrote a token). Refuses to follow a symlink (same hardening
+ * as writeApprovalToken).
+ */
+export function deleteApprovalToken(root, taskId) {
+  const tokenPath = path.join(root, '.agents', 'approvals', `${taskId}.approved`);
+
+  let stat;
+  try {
+    stat = fs.lstatSync(tokenPath);
+  } catch (err) {
+    if (err.code === 'ENOENT') return { deleted: false };
+    throw err;
+  }
+  if (stat.isSymbolicLink()) {
+    throw new Error(`[approvals] approval token is a symlink: ${tokenPath}`);
+  }
+
+  fs.unlinkSync(tokenPath);
+  return { deleted: true };
+}

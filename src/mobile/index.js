@@ -22,6 +22,7 @@ import {
   validateTaskId,
   resolveTask,
   writeApprovalToken,
+  deleteApprovalToken,
 } from './approvals.js';
 import { WsHub } from './wsHub.js';
 
@@ -111,10 +112,39 @@ export async function createMobileServer({ broadcaster, roots, options = {} }) {
     return handleReject(c, body, hub, roots);
   });
 
+  // ---- POST /undo ----
+  app.post('/undo', async (c) => {
+    // Auth first
+    if (!checkToken(extractBearer(c), token)) {
+      return c.json({ error: 'unauthorized' }, 401);
+    }
+
+    // Body cap
+    const rawResult = await readBodyCapped(c, BODY_CAP);
+    if (!rawResult.ok) return c.json({ error: rawResult.status === 413 ? 'payload too large' : 'read error' }, rawResult.status);
+
+    let body;
+    try {
+      body = JSON.parse(rawResult.text);
+    } catch {
+      return c.json({ error: 'invalid body' }, 400);
+    }
+
+    return handleUndo(c, body, hub, roots);
+  });
+
   // ---- Static browser-mobile/ ----
   if (fs.existsSync(BROWSER_MOBILE_DIR)) {
     // Serve relative to the project root (CWD), not the module dir
     const relPath = path.relative(process.cwd(), BROWSER_MOBILE_DIR);
+    // Never cache the PWA shell: there is no service worker or build-time asset
+    // hashing yet, and iOS Safari otherwise serves stale JS indefinitely — so a
+    // client fix "deploys" but never reaches the device. no-store keeps the
+    // device on the latest assets.
+    app.use('/*', async (c, next) => {
+      c.header('Cache-Control', 'no-store');
+      await next();
+    });
     app.use('/*', serveStatic({ root: relPath }));
   }
 
@@ -223,7 +253,41 @@ async function handleReject(c, body, hub, roots) {
   if (resolved.error === 'task-not-claimed') return c.json({ error: 'task-not-claimed' }, 404);
   if (resolved.error === 'ambiguous-task') return c.json({ error: 'ambiguous-task' }, 409);
 
-  // Writes NOTHING to .agents/ (APPROVAL-1 denial clause)
-  hub.broadcast({ type: 'rejected', taskId, sessionId });
+  // Writes NOTHING to .agents/ (APPROVAL-1 denial clause).
+  // hub.reject records the card in the rejected set so a reconnecting
+  // phone re-greys it (§6.3), then broadcasts live.
+  hub.reject(taskId, sessionId);
   return c.json({ rejected: true });
+}
+
+// ---- Undo handler ----
+async function handleUndo(c, body, hub, roots) {
+  const { sessionId, taskId } = body ?? {};
+
+  if (typeof sessionId !== 'string' || !sessionId) {
+    return c.json({ error: 'sessionId required' }, 400);
+  }
+  if (typeof taskId !== 'string' || !taskId) {
+    return c.json({ error: 'taskId required' }, 400);
+  }
+  // No digest guard: undo reverts the task's decision regardless of which turn is
+  // current — the point is to recover from an accidental approve/reject.
+  if (!validateTaskId(taskId)) {
+    return c.json({ error: 'invalid-task-id' }, 400);
+  }
+
+  const resolved = resolveTask(roots, taskId);
+  if (resolved.error === 'task-not-claimed') return c.json({ error: 'task-not-claimed' }, 404);
+  if (resolved.error === 'ambiguous-task') return c.json({ error: 'ambiguous-task' }, 409);
+
+  // Revert an accidental approve (delete the bus token) and clear any rejected
+  // marker, then broadcast {type:'undo'} so every device un-marks the card.
+  let result;
+  try {
+    result = deleteApprovalToken(resolved.root, taskId);
+  } catch (err) {
+    return c.json({ error: 'undo-failed', message: err.message }, 500);
+  }
+  hub.undo(taskId, sessionId);
+  return c.json({ undone: true, tokenDeleted: !!result.deleted });
 }

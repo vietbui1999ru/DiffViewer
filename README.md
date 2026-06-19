@@ -59,8 +59,9 @@ trust boundary, and a single shared token is the second factor. Browsers can't p
 self-signed certs, so plain-HTTP-on-LAN is intentionally unsupported.
 
 ```bash
-# 1. Expose the loopback port to your tailnet with real TLS:
-tailscale serve --bg --https=443 127.0.0.1:3334
+# 1. Expose the loopback port to your tailnet with real TLS
+#    (Tailscale 1.60+; serves HTTPS on :443 by default):
+tailscale serve --bg 3334
 
 # 2. Tell the daemon its public URL, then print the pairing QR:
 DIFFVIEWER_MOBILE_URL=https://<your-host>.ts.net node server.js --mobile --pair <repo>
