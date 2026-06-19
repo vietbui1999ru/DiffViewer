@@ -4,6 +4,7 @@ import { SessionRegistry } from './turnBuffer.js';
 import { Broadcaster } from './broadcaster.js';
 import { normalizeEvent } from './normalizer.js';
 import { makeSteerHandler } from './steer.js';
+import { makeAnnotateHandler } from './annotate.js';
 
 const KNOWN_TOOLS = new Set(['write', 'edit', 'multiedit']);
 
@@ -26,6 +27,7 @@ export function createApp(deps = {}) {
   });
 
   app.post('/steer', makeSteerHandler(deps.steerExec));
+  app.post('/annotate', makeAnnotateHandler(deps.annotateExec));
 
   app.post('/turn-end', async (c) => {
     let body;
@@ -58,5 +60,6 @@ export function createApp(deps = {}) {
   // exposed so server.js can share the same instances with /stream and /steer
   app._registry = registry;
   app._broadcaster = broadcaster;
+  app._annotateExec = deps.annotateExec;
   return app;
 }

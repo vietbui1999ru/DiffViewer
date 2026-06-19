@@ -417,3 +417,86 @@ describe('sidecarWatcher — POST path still works (existing suite compatibility
     expect(emitted[0].events[0].path).toBe('post.js');
   });
 });
+
+describe('sidecarWatcher — open-once-then-notify (§6 / decision 6)', () => {
+  it('SW-OPEN-01 first turn fires onFirstTurn once; second fires onSubsequentTurn', { timeout: 8000 }, async () => {
+    const { root, sessionDir } = makeTmpRepo('sw-open-1');
+    const registry = new SessionRegistry();
+    const broadcaster = new Broadcaster();
+    const emitted = collectEmits(broadcaster);
+    const onFirstTurn = vi.fn();
+    const onSubsequentTurn = vi.fn();
+
+    const watcher = createSidecarWatcher([root], { registry, broadcaster, onFirstTurn, onSubsequentTurn });
+    watchers.push(watcher);
+
+    await new Promise((r) => setTimeout(r, 50));
+    writeTurn(sessionDir, 1, [{ tool: 'Write', path: 'a.js', oldContent: '', newContent: 'a\n' }]);
+    await waitFor(() => emitted.length >= 1, 6000);
+
+    writeTurn(sessionDir, 2, [{ tool: 'Edit', path: 'a.js', oldContent: 'a\n', newContent: 'b\n' }]);
+    await waitFor(() => emitted.length >= 2, 6000);
+
+    expect(onFirstTurn).toHaveBeenCalledTimes(1);
+    expect(onFirstTurn).toHaveBeenCalledWith('sw-open-1');
+    expect(onSubsequentTurn).toHaveBeenCalledTimes(1);
+    expect(onSubsequentTurn).toHaveBeenCalledWith('sw-open-1', expect.objectContaining({ sessionId: 'sw-open-1' }));
+  });
+
+  it('SW-OPEN-02 a second session triggers onFirstTurn independently', { timeout: 8000 }, async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'diffviewer-test-'));
+    const sessADir = path.join(root, '.diffviewer', 'turns', 's2-A');
+    const sessBDir = path.join(root, '.diffviewer', 'turns', 's2-B');
+    fs.mkdirSync(sessADir, { recursive: true });
+    fs.mkdirSync(sessBDir, { recursive: true });
+
+    const registry = new SessionRegistry();
+    const broadcaster = new Broadcaster();
+    const emitted = collectEmits(broadcaster);
+    const onFirstTurn = vi.fn();
+    const onSubsequentTurn = vi.fn();
+
+    const watcher = createSidecarWatcher([root], { registry, broadcaster, onFirstTurn, onSubsequentTurn });
+    watchers.push(watcher);
+
+    await new Promise((r) => setTimeout(r, 50));
+    writeTurn(sessADir, 1, [{ tool: 'Write', path: 'a.js', oldContent: '', newContent: 'a\n' }]);
+    await waitFor(() => emitted.length >= 1, 6000);
+    writeTurn(sessBDir, 1, [{ tool: 'Write', path: 'b.js', oldContent: '', newContent: 'b\n' }]);
+    await waitFor(() => emitted.length >= 2, 6000);
+
+    const firstArgs = onFirstTurn.mock.calls.map((c) => c[0]);
+    expect(firstArgs).toEqual(expect.arrayContaining(['s2-A', 's2-B']));
+    expect(onFirstTurn).toHaveBeenCalledTimes(2);
+  });
+
+  it('SW-OPEN-03 startup scan does NOT trigger onFirstTurn; first LIVE turn does', { timeout: 8000 }, async () => {
+    const { root, sessionDir } = makeTmpRepo('sw-open-3');
+    const registry = new SessionRegistry();
+    const broadcaster = new Broadcaster();
+    const emitted = collectEmits(broadcaster);
+    const onFirstTurn = vi.fn();
+    const onSubsequentTurn = vi.fn();
+
+    // Pre-existing turns written BEFORE the watcher starts -> startup scan ingests them
+    writeTurn(sessionDir, 1, [{ tool: 'Write', path: 'p.js', oldContent: '', newContent: 'p\n' }]);
+    writeTurn(sessionDir, 2, [{ tool: 'Edit', path: 'p.js', oldContent: 'p\n', newContent: 'q\n' }]);
+
+    const watcher = createSidecarWatcher([root], { registry, broadcaster, onFirstTurn, onSubsequentTurn });
+    watchers.push(watcher);
+
+    // Startup scan is synchronous — two pre-existing turns already emitted, no callbacks
+    expect(emitted).toHaveLength(2);
+    expect(onFirstTurn).not.toHaveBeenCalled();
+    expect(onSubsequentTurn).not.toHaveBeenCalled();
+
+    // A live turn for the same session opens the tab (Set was not pre-populated by scan)
+    await new Promise((r) => setTimeout(r, 50));
+    writeTurn(sessionDir, 3, [{ tool: 'Edit', path: 'p.js', oldContent: 'q\n', newContent: 'r\n' }]);
+    await waitFor(() => emitted.length >= 3, 6000);
+
+    expect(onFirstTurn).toHaveBeenCalledTimes(1);
+    expect(onFirstTurn).toHaveBeenCalledWith('sw-open-3');
+    expect(onSubsequentTurn).not.toHaveBeenCalled();
+  });
+});

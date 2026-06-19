@@ -1,12 +1,9 @@
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
+import { execFile } from 'node:child_process';
 import { createApp } from './src/app.js';
 import { createSidecarWatcher } from './src/sidecarWatcher.js';
-
-const app = createApp();
-
-// serve browser/ assets; GET / -> browser/index.html
-app.use('/*', serveStatic({ root: './browser' }));
+import { makeDefaultAnnotateExec } from './src/annotate.js';
 
 // Watch roots: CLI args (non-flag) or DIFFVIEWER_WATCH_ROOTS (colon-separated)
 const args = process.argv.slice(2);
@@ -17,10 +14,30 @@ const roots = args.filter(a => !a.startsWith('--')).filter(Boolean);
 if (roots.length === 0 && process.env.DIFFVIEWER_WATCH_ROOTS) {
   roots.push(...process.env.DIFFVIEWER_WATCH_ROOTS.split(':').filter(Boolean));
 }
+
+const app = createApp({
+  annotateExec: makeDefaultAnnotateExec({ roots }),
+});
+
+// serve browser/ assets; GET / -> browser/index.html
+app.use('/*', serveStatic({ root: './browser' }));
+
+// Open-once-then-notify: best-effort, never a gate. Uses the macOS built-in `open`
+// and `osascript` (no npm deps — `open`/`node-notifier` are not in package.json).
+// Errors are swallowed so a missing binary or non-macOS host degrades to a no-op.
+const onFirstTurn = () => {
+  execFile('open', ['http://localhost:3333'], () => {});
+};
+const onSubsequentTurn = (sessionId) => {
+  execFile('osascript', ['-e', `display notification "New turn for ${sessionId}" with title "DiffViewer"`], () => {});
+};
+
 if (roots.length > 0) {
   createSidecarWatcher(roots, {
     registry: app._registry,
     broadcaster: app._broadcaster,
+    onFirstTurn,
+    onSubsequentTurn,
   });
 }
 
@@ -31,7 +48,7 @@ serve({ fetch: app.fetch, port: 3333, hostname: '127.0.0.1' }, (info) => {
   }
 });
 
-// ---- Mobile companion (--mobile or DIFFVIEWER_MOBILE=1) ----
+// ---- Mobile companion (--mobile or DIFFVIEWER_MOBILE === '1') ----
 if (mobileFlag) {
   // Lazy imports to keep startup fast when mobile is off
   const { loadOrCreateToken } = await import('./src/mobile/auth.js');

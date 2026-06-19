@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderTurnCard, updateTabTitle } from '../browser/app.js';
 
 const snap = {
@@ -45,5 +45,68 @@ describe('renderTurnCard', () => {
   it('AC-UI6 updateTabTitle reflects count', () => {
     updateTabTitle(2);
     expect(document.title).toBe('(2) Diff Viewer');
+  });
+});
+
+describe('renderTurnCard — annotation box (ANN-UI)', () => {
+  const taskSnap = { ...snap, task: 'TASK-9', turnNumber: 3 };
+
+  beforeEach(() => { document.body.innerHTML = ''; document.title = ''; });
+
+  it('ANN-UI-01 renders an annotation textarea + Note button inside each file-card', () => {
+    const card = renderTurnCard(taskSnap, document);
+    const cards = card.querySelectorAll('[data-testid="file-card"]');
+    expect(cards).toHaveLength(2);
+    for (const fc of cards) {
+      expect(fc.querySelector('[data-testid="annotation-input"]')).not.toBeNull();
+      const btn = fc.querySelector('[data-testid="annotation-send"]');
+      expect(btn).not.toBeNull();
+      expect(btn.disabled).toBe(false);
+    }
+  });
+
+  it('ANN-UI-02 Note click POSTs /annotate with anchor card:<path> + correct payload', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    const origFetch = global.fetch;
+    global.fetch = fetchMock;
+    try {
+      const card = renderTurnCard(taskSnap, document);
+      const firstCard = card.querySelector('[data-testid="file-card"]');
+      const ta = firstCard.querySelector('[data-testid="annotation-input"]');
+      const btn = firstCard.querySelector('[data-testid="annotation-send"]');
+      ta.value = 'check this';
+      btn.click();
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, opts] = fetchMock.mock.calls[0];
+      expect(url).toBe('/annotate');
+      expect(opts.method).toBe('POST');
+      const payload = JSON.parse(opts.body);
+      expect(payload).toEqual({
+        task: 'TASK-9', turn: 3, anchor: 'card:a.js', bodyText: 'check this', author: 'human',
+      });
+      // textarea cleared on success
+      expect(ta.value).toBe('');
+    } finally {
+      global.fetch = origFetch;
+    }
+  });
+
+  it('ANN-UI-03 null task disables the button and suppresses the POST', async () => {
+    const fetchMock = vi.fn();
+    const origFetch = global.fetch;
+    global.fetch = fetchMock;
+    try {
+      const card = renderTurnCard({ ...snap, task: null }, document);
+      const firstCard = card.querySelector('[data-testid="file-card"]');
+      const btn = firstCard.querySelector('[data-testid="annotation-send"]');
+      expect(btn.disabled).toBe(true);
+      btn.click();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      global.fetch = origFetch;
+    }
   });
 });
