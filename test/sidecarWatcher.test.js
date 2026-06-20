@@ -145,13 +145,13 @@ describe('sidecarWatcher — file write -> SSE snapshot', () => {
 
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
-    const watcher = createSidecarWatcher([root], { registry, broadcaster });
-    watchers.push(watcher);
-
     const badFile = path.join(sessionDir, 'turn-1.json');
     fs.writeFileSync(badFile, '{ this is not json }');
 
-    await waitFor(() => stderrSpy.mock.calls.length > 0, 3000);
+    const watcher = createSidecarWatcher([root], { registry, broadcaster });
+    watchers.push(watcher);
+
+    expect(stderrSpy).toHaveBeenCalled();
 
     stderrSpy.mockRestore();
     expect(emitted).toHaveLength(0);
@@ -167,15 +167,15 @@ describe('sidecarWatcher — file write -> SSE snapshot', () => {
 
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
-    const watcher = createSidecarWatcher([root], { registry, broadcaster });
-    watchers.push(watcher);
-
     const badFile = writeTurn(sessionDir, 1,
       [{ tool: 'Write', path: 'x.js', oldContent: '', newContent: 'x\n' }],
       { version: 99 }  // invalid version
     );
 
-    await waitFor(() => stderrSpy.mock.calls.length > 0, 3000);
+    const watcher = createSidecarWatcher([root], { registry, broadcaster });
+    watchers.push(watcher);
+
+    expect(stderrSpy).toHaveBeenCalled();
     stderrSpy.mockRestore();
 
     expect(emitted).toHaveLength(0);
