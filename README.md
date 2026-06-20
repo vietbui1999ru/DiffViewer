@@ -70,6 +70,23 @@ open http://localhost:3333
 Open the Architecture tab after generating `analysis.json`. Missing or malformed
 artifacts render inline empty/error states without affecting the diff feed.
 
+## Neovim bridge (v0)
+
+`nvim/diffviewer.lua` is an optional operator-lane bridge. It connects to the
+desktop SSE stream, shows the latest turn in a scratch diff buffer, and can send
+steer text back through `/steer`.
+
+```lua
+require('diffviewer').setup({ url = 'http://localhost:3333' })
+```
+
+Default keymap: `<leader>dv` opens the latest turn. Inside the diff buffer,
+`c` sends a steer prompt and `d` declines the file under the cursor after an
+explicit confirmation by running `git checkout -- <path>`.
+
+The bridge is a local projection only. It does not own task state, approvals, or
+Commandr lifecycle. Annotation-write integration is still future work.
+
 ## Mobile companion (MVP-0)
 
 A phone-facing approval loop: review an agent's per-turn diff on your phone and
