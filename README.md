@@ -1,12 +1,20 @@
 # DiffViewer
 
-Real-time diff review tool for Claude Code. Renders agent-generated file changes as grouped diff cards in a browser tab, with clipboard-based steer injection between turns.
+Real-time diff review tool for Claude Code and OpenCode. Renders agent-generated file changes as grouped diff cards in a browser tab, with steer injection between turns.
 
 ## How it works
 
-Claude Code's `PostToolUse` hook fires after every Write/Edit/MultiEdit and POSTs the event to a local Hono server. The `Stop` hook signals turn completion. The browser tab receives grouped diffs via SSE and renders them with `diff2html`.
+DiffViewer is a thin UI projection over agent turns. Current inputs are:
+
+- Claude Code hook fallback: `PostToolUse` posts file events to `/event`; `Stop` posts `/turn-end`.
+- Sidecar ingestion: adapters write `<repo>/.diffviewer/turns/<sessionId>/turn-<N>.json`; the server watches those files and broadcasts diff cards over SSE.
+- OpenCode plugin: captures `write`, `edit`, and `apply_patch` tool calls, then writes sidecar turns on session idle.
+
+The browser tab receives grouped diffs via SSE and renders them with `diff2html`. Commandr remains the lifecycle source of truth; DiffViewer renders diffs, annotation/approval affordances, and architecture artifacts today; cockpit actions are the next planned layer around that bus.
 
 See [`docs/PRD.md`](docs/PRD.md) for full requirements and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for component map.
+
+Builder.io Agent-Native and Skills are design inputs for the next cockpit phase, not runtime dependencies. DiffViewer adopts the shared action dispatcher and visual plan/recap artifact pattern while leaving lifecycle authority in Commandr. See [`docs/BUILDERIO-FIT.md`](docs/BUILDERIO-FIT.md) and [`docs/V0.7-CONTROL-PLANE-COCKPIT-PLAN.md`](docs/V0.7-CONTROL-PLANE-COCKPIT-PLAN.md).
 
 ## Pi worker extension
 
@@ -29,7 +37,23 @@ bash scripts/install.sh # patches ~/.claude/settings.json with hooks (idempotent
 open http://localhost:3333
 ```
 
-v0.5 scope: per-turn grouped diff cards in the browser + clipboard steer.
+By default, steer prompts are copied to the clipboard. To send steers directly
+to an OpenCode session, start OpenCode with a known server URL and pass it to
+DiffViewer:
+
+```bash
+opencode --port 4096 ~/repos/Commandr
+OPENCODE_SERVER_URL=http://127.0.0.1:4096 node server.js ~/repos/Commandr
+```
+
+If `OPENCODE_SERVER_PASSWORD` protects OpenCode, set the same value for
+DiffViewer; `OPENCODE_SERVER_USERNAME` defaults to `opencode`.
+
+Direct steering works only when the card carries a real OpenCode session id
+(`rawSessionId` from sidecars when available, otherwise `sessionId`) that exists
+on that server. Synthetic demo cards must mark themselves as `synthetic: true`;
+those requests fall back to copy/paste semantics because there is no real target
+agent session.
 
 ## Architecture view (Path A scaffold)
 
@@ -45,6 +69,23 @@ open http://localhost:3333
 
 Open the Architecture tab after generating `analysis.json`. Missing or malformed
 artifacts render inline empty/error states without affecting the diff feed.
+
+## Neovim bridge (v0)
+
+`nvim/diffviewer.lua` is an optional operator-lane bridge. It connects to the
+desktop SSE stream, shows the latest turn in a scratch diff buffer, and can send
+steer text back through `/steer`.
+
+```lua
+require('diffviewer').setup({ url = 'http://localhost:3333' })
+```
+
+Default keymap: `<leader>dv` opens the latest turn. Inside the diff buffer,
+`c` sends a steer prompt and `d` declines the file under the cursor after an
+explicit confirmation by running `git checkout -- <path>`.
+
+The bridge is a local projection only. It does not own task state, approvals, or
+Commandr lifecycle. Annotation-write integration is still future work.
 
 ## Mobile companion (MVP-0)
 

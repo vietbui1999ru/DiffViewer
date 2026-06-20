@@ -113,7 +113,11 @@ export function renderTurnCard(snapshot, doc = document) {
     try {
       const res = await fetch('/steer', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sessionId: snapshot.sessionId, text }),
+        body: JSON.stringify({
+          sessionId: snapshot.rawSessionId ?? snapshot.sessionId,
+          text,
+          synthetic: snapshot.synthetic === true,
+        }),
       });
       if (res.ok) {
         steerBox.value = '';
