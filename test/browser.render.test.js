@@ -46,6 +46,24 @@ describe('renderTurnCard', () => {
     updateTabTitle(2);
     expect(document.title).toBe('(2) Diff Viewer');
   });
+
+  it('AC-UI7 steers to raw session id and preserves synthetic flag', async () => {
+    const fetchSpy = vi.fn(async () => ({ ok: true }));
+    global.fetch = fetchSpy;
+    const card = renderTurnCard({ ...snap, rawSessionId: 'sess/with:special!chars', synthetic: true }, document);
+    const input = card.querySelector('.steer-input');
+    input.value = 'continue';
+
+    card.querySelector('[data-testid="steer-send"]').click();
+    await Promise.resolve();
+
+    const [, init] = fetchSpy.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({
+      sessionId: 'sess/with:special!chars',
+      text: 'continue',
+      synthetic: true,
+    });
+  });
 });
 
 describe('renderTurnCard — annotation box (ANN-UI)', () => {

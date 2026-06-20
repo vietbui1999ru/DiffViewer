@@ -151,9 +151,8 @@ describe('sidecarWatcher — file write -> SSE snapshot', () => {
     const badFile = path.join(sessionDir, 'turn-1.json');
     fs.writeFileSync(badFile, '{ this is not json }');
 
-    await new Promise(r => setTimeout(r, 300));
+    await waitFor(() => stderrSpy.mock.calls.length > 0, 3000);
 
-    expect(stderrSpy).toHaveBeenCalled();
     stderrSpy.mockRestore();
     expect(emitted).toHaveLength(0);
     // File must still be there (not unlinked on error)
@@ -176,8 +175,7 @@ describe('sidecarWatcher — file write -> SSE snapshot', () => {
       { version: 99 }  // invalid version
     );
 
-    await new Promise(r => setTimeout(r, 300));
-    expect(stderrSpy).toHaveBeenCalled();
+    await waitFor(() => stderrSpy.mock.calls.length > 0, 3000);
     stderrSpy.mockRestore();
 
     expect(emitted).toHaveLength(0);

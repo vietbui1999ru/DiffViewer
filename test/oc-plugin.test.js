@@ -427,9 +427,10 @@ describe('oc-plugin — sessionID sanitization', () => {
     const files = fs.readdirSync(sessionDir).filter(f => /^turn-\d+\.json$/.test(f))
     expect(files).toHaveLength(1)
 
-    // The JSON payload's sessionId field must also equal the sanitized value (spec §1)
+    // The JSON payload keeps the safe sessionId for the sidecar path and rawSessionId for APIs.
     const snap = JSON.parse(fs.readFileSync(path.join(sessionDir, files[0]), 'utf8'))
     expect(snap.sessionId).toBe(expectedSanitized)
+    expect(snap.rawSessionId).toBe(rawSession)
   })
 })
 

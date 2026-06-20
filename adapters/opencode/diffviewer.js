@@ -157,6 +157,7 @@ export const DiffViewerPlugin = async ({ directory, worktree }) => {
     const payload = {
       version: 1,
       sessionId: sanitized,
+      rawSessionId: sessionID,
       harness: 'opencode',
       task: null,
       turnNumber: n,
