@@ -5,3 +5,11 @@ node_modules/
 .claude/
 test-results/
 playwright-report/
+
+# Sidecar ingestion runtime state (previously ignored only via global git config)
+.diffviewer/
+
+# pi-extension sub-project build/state artifacts
+pi-extension/node_modules/
+pi-extension/.pi/
+pi-extension/tmp/
