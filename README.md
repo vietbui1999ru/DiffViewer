@@ -145,4 +145,7 @@ the physical-phone + Tailscale leg is operator-driven per the steps above.
 
 ## Placement
 
-This repo lives at `~/dotfiles/.claude/tools/diff-viewer/` and is stowed to `~/.claude/tools/diff-viewer/` for cross-machine consistency.
+This repo is a standalone checkout at `~/repos/DiffViewer/`. It is wired into the
+agent toolchain by symlink (e.g. `~/.config/opencode/plugins/diffviewer.js` →
+`~/repos/DiffViewer/adapters/opencode/diffviewer.js`), not by being stowed from
+dotfiles — clone it under `~/repos/` before running the dotfiles OpenCode setup.
